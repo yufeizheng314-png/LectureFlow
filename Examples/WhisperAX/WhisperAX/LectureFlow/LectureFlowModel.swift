@@ -29,11 +29,14 @@ final class LectureFlowModel: ObservableObject {
     private var notesToken: UUID?
     private var notesNeedAnotherPass = false
     private var player: AVAudioPlayer?
+    private var playbackToken = UUID()
     private struct Capture {
         let id: UUID
         let lessonID: UUID
         let url: URL
         let offset: Double
+        let previousAudioGeneration: UUID
+        let isRecovery: Bool
     }
     private var capture: Capture?
     private var finalizingCapture = false
@@ -53,7 +56,7 @@ final class LectureFlowModel: ObservableObject {
         } catch { errorMessage = error.localizedDescription }
         audio.$confirmedSegments.dropFirst().sink { [weak self] _ in
             guard let self, let current = self.capture else { return }
-            Task { await self.persistConfirmed(for: current) }
+            Task { _ = await self.persistConfirmed(for: current) }
         }.store(in: &observations)
         audio.$state.dropFirst().sink { [weak self] state in
             guard let self else { return }
@@ -152,7 +155,8 @@ final class LectureFlowModel: ObservableObject {
             let url = try await store.nextRecordingURL(for: current.id)
             let reservation = try await store.loadLesson(current.id)
             let offset = reservation.audioFiles.first(where: { $0.fileName == url.lastPathComponent })?.offset ?? current.timelineDuration
-            let next = Capture(id: UUID(), lessonID: current.id, url: url, offset: offset)
+            let next = Capture(id: UUID(), lessonID: current.id, url: url, offset: offset,
+                               previousAudioGeneration: audio.sessionGeneration, isRecovery: false)
             capture = next
             try await audio.start(using: whisper, outputURL: url, baseOffset: offset)
             lesson = try await store.setRecordingState(.recording, for: current.id)
@@ -172,8 +176,8 @@ final class LectureFlowModel: ObservableObject {
         busy = false
     }
 
-    private func persistConfirmed(for current: Capture) async {
-        guard capture?.id == current.id, let store else { return }
+    private func persistConfirmed(for current: Capture) async -> Bool {
+        guard capture?.id == current.id, ownsAudio(current), let store else { return false }
         let segments = audio.confirmedSegments.map {
             LFConfirmedSegment(id: $0.id, startTime: $0.start, endTime: $0.end, english: $0.text)
         }
@@ -181,9 +185,11 @@ final class LectureFlowModel: ObservableObject {
             let saved = try await store.appendConfirmedSegments(segments, to: current.lessonID)
             if lesson?.id == current.lessonID { lesson = saved }
             scheduleNotes()
+            return true
         } catch {
             errorMessage = "转写保存失败：\(error.localizedDescription)。请保留原录音后重试。"
             await audio.stop()
+            return false
         }
     }
 
@@ -191,7 +197,20 @@ final class LectureFlowModel: ObservableObject {
         guard !finalizingCapture, let current = capture, let store else { return }
         finalizingCapture = true
         defer { finalizingCapture = false }
-        await persistConfirmed(for: current)
+        guard ownsAudio(current) else {
+            // Recovery validates before resetting the audio session. A failed preflight
+            // must never attach the previous session's transcript or duration here.
+            do {
+                if !current.isRecovery && !FileManager.default.fileExists(atPath: current.url.path) {
+                    _ = try await store.cancelUnusedRecording(lessonID: current.lessonID, url: current.url)
+                    let saved = try await store.setRecordingState(.paused, for: current.lessonID)
+                    if lesson?.id == current.lessonID { lesson = saved }
+                }
+                capture = nil
+            } catch { errorMessage = error.localizedDescription }
+            return
+        }
+        guard await persistConfirmed(for: current) else { return }
         do {
             if FileManager.default.fileExists(atPath: current.url.path) {
                 _ = try await store.registerRecording(lessonID: current.lessonID, url: current.url,
@@ -210,6 +229,12 @@ final class LectureFlowModel: ObservableObject {
         }
     }
 
+    private func ownsAudio(_ current: Capture) -> Bool {
+        audio.sessionGeneration != current.previousAudioGeneration &&
+        audio.recordingURL?.standardizedFileURL.resolvingSymlinksInPath().path ==
+            current.url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     func saveCloudSettings(endpoint: String, model: String, newKey: String, enabled: Bool) async throws {
         guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw LFError.invalid("请输入完整 HTTPS chat/completions 地址。")
@@ -218,12 +243,12 @@ final class LectureFlowModel: ObservableObject {
         try value.validate()
         let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty {
-            guard configuration?.endpoint == value.endpoint, try LFKeychain.read() != nil else {
+            guard configuration?.endpoint == value.endpoint, try LFKeychain.read(for: value.endpoint) != nil else {
                 throw LFError.invalid("首次设置或更换服务地址时，请重新填写该服务的 API Key。")
             }
         }
         await cancelNotes()
-        if !key.isEmpty { try LFKeychain.save(key) }
+        if !key.isEmpty { try LFKeychain.save(key, for: value.endpoint) }
         try value.save()
         configuration = value
         autoNotesEnabled = enabled
@@ -283,7 +308,10 @@ final class LectureFlowModel: ObservableObject {
             } catch {
                 if !Task.isCancelled, self.notesToken == token { self.errorMessage = error.localizedDescription }
                 if let store = self.store, self.lesson?.id == current.id {
-                    self.lesson = try? await store.loadLesson(current.id)
+                    if let latest = try? await store.loadLesson(current.id), self.notesToken == token,
+                       self.lesson?.id == current.id {
+                        self.lesson = latest
+                    }
                 }
             }
             if self.notesToken == token {
@@ -307,9 +335,10 @@ final class LectureFlowModel: ObservableObject {
         }
     }
 
-    func editNote(_ note: LFNoteBlock, english: String, chinese: String) async throws {
-        guard let id = lesson?.id, let store else { return }
-        lesson = try await store.updateNote(lessonID: id, noteID: note.id, english: english, chinese: chinese)
+    func editNote(_ note: LFNoteBlock, lessonID: UUID, english: String, chinese: String) async throws {
+        guard let store else { return }
+        let saved = try await store.updateNote(lessonID: lessonID, noteID: note.id, english: english, chinese: chinese)
+        if lesson?.id == lessonID { lesson = saved }
     }
 
     func export(_ format: LFExportFormat) async {
@@ -333,8 +362,11 @@ final class LectureFlowModel: ObservableObject {
         guard !hasCapture, let current = lesson, let store else { return }
         guard let file = fileID.flatMap({ id in current.audioFiles.first { $0.id == id } })
                 ?? current.audioFiles.first(where: { $0.duration > 0 && seconds >= $0.offset && seconds < $0.offset + $0.duration }) else { return }
+        let token = UUID()
+        playbackToken = token
         do {
             let url = try await store.recordingURL(lessonID: current.id, fileID: file.id)
+            guard playbackToken == token, !hasCapture, lesson?.id == current.id else { return }
             try AVAudioSession.sharedInstance().setCategory(.playback)
             try AVAudioSession.sharedInstance().setActive(true)
             let value = try AVAudioPlayer(contentsOf: url)
@@ -342,10 +374,11 @@ final class LectureFlowModel: ObservableObject {
             guard value.play() else { throw LFError.invalid("录音暂时不能播放。") }
             player = value
             playing = true
-        } catch { errorMessage = error.localizedDescription }
+        } catch { if playbackToken == token { errorMessage = error.localizedDescription } }
     }
 
     func stopPlayback() {
+        playbackToken = UUID()
         player?.stop()
         player = nil
         playing = false
@@ -365,7 +398,8 @@ final class LectureFlowModel: ObservableObject {
         stopPlayback()
         do {
             let url = try await store.recordingURL(lessonID: current.id, fileID: id)
-            capture = Capture(id: UUID(), lessonID: current.id, url: url, offset: file.offset)
+            capture = Capture(id: UUID(), lessonID: current.id, url: url, offset: file.offset,
+                              previousAudioGeneration: audio.sessionGeneration, isRecovery: true)
             try await audio.resumeTranscription(using: whisper, from: url, baseOffset: file.offset)
             await finishCapture()
         } catch {

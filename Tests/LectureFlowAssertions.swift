@@ -127,13 +127,19 @@ struct LectureFlowAssertions {
         try config.validate()
         await mustFail { try LFCloudConfiguration(endpoint: URL(string: "http://example.invalid/chat")!, model: "x").validate() }
         await mustFail { try LFCloudConfiguration(endpoint: URL(string: "https://user:secret@example.invalid/chat")!, model: "x").validate() }
-        let noConfig = LFNotesService(store: reopened, keyProvider: { nil })
+        let endpointB = URL(string: "https://other.example.invalid/v1/chat/completions")!
+        let boundKey = try LFKeychain.credentialData("fixture-B-key", for: endpointB)
+        check(LFKeychain.matchingKey(in: boundKey, for: config.endpoint) == nil, "Crash between config/key writes must not send B's key to A")
+        check(LFKeychain.matchingKey(in: boundKey, for: endpointB) == "fixture-B-key", "Bound key must match the complete endpoint")
+        check(LFKeychain.matchingKey(in: boundKey, for: URL(string: "https://other.example.invalid/other/path")!) == nil, "Binding includes the path, not just the origin")
+        check(LFKeychain.matchingKey(in: Data("legacy-unbound-key".utf8), for: config.endpoint) == nil, "Legacy unbound keys must never be sent")
+        let noConfig = LFNotesService(store: reopened, keyProvider: { _ in nil })
         let notConfigured = try await noConfig.generatePending(lessonID: other.id, configuration: nil)
         check(notConfigured.notesState == .notConfigured && notConfigured.notesError != nil, "No AI must be explicit")
 
         _ = try await reopened.appendConfirmedSegments([LFConfirmedSegment(id: "new", startTime: 95, endTime: 99, english: "ONLY NEW CONFIRMED TEXT")], to: lesson.id)
         let mock = ScriptedHTTP(firstStatus: 503)
-        let service = LFNotesService(store: reopened, transport: { try await mock.call($0) }, keyProvider: { "fixture-key-never-on-disk" })
+        let service = LFNotesService(store: reopened, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture-key-never-on-disk" })
         let withNew = try await service.generatePending(lessonID: lesson.id, configuration: config)
         let sent = await mock.requests
         check(sent.count == 2, "A transient HTTP failure must retry")
@@ -145,12 +151,12 @@ struct LectureFlowAssertions {
 
         _ = try await reopened.appendConfirmedSegments([LFConfirmedSegment(id: "other-segment", startTime: 0, endTime: 1, english: "Other source")], to: other.id)
         let held = HeldHTTP()
-        let lateService = LFNotesService(store: reopened, transport: { try await held.call($0) }, keyProvider: { "fixture" })
+        let lateService = LFNotesService(store: reopened, transport: { try await held.call($0) }, keyProvider: { _ in "fixture" })
         let oldRequest = Task { try await lateService.generatePending(lessonID: other.id, configuration: config) }
         await held.waitForRequest()
         _ = try await lateService.cancel(lessonID: other.id)
         let quick = ScriptedHTTP()
-        let replacement = LFNotesService(store: reopened, transport: { try await quick.call($0) }, keyProvider: { "fixture" })
+        let replacement = LFNotesService(store: reopened, transport: { try await quick.call($0) }, keyProvider: { _ in "fixture" })
         _ = try await replacement.generatePending(lessonID: other.id, configuration: config)
         try await held.release()
         await mustFail { _ = try await oldRequest.value }
@@ -161,6 +167,8 @@ struct LectureFlowAssertions {
         await mustFail { try invalid.validate(for: batch) }
         let missingSource = LFGeneratedNotes(englishNotes: "x", chineseNotes: "中", keyTerms: [], sourceSegmentIDs: [])
         await mustFail { try missingSource.validate(for: batch) }
+        await mustFail { _ = try LFNotesService.decodeResponse(Data(repeating: 32, count: 1_048_577), for: batch) }
+        await mustFail { _ = try LFNotesService.decodeResponse(Data("{broken-json".utf8), for: batch) }
         let markdown = try await reopened.exportLesson(lesson.id, format: .markdown)
         let plain = try await reopened.exportLesson(lesson.id, format: .text)
         check(try String(contentsOf: markdown, encoding: .utf8).contains("我的中文修改"), "Export must preserve edited Unicode notes")

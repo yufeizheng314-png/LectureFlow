@@ -15,11 +15,11 @@ actor LFNotesService {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
     private let store: LFLessonStore
     private let transport: Transport
-    private let keyProvider: @Sendable () throws -> String?
+    private let keyProvider: @Sendable (URL) throws -> String?
     private var active: [UUID: (token: UUID, task: Task<LFLesson, Error>)] = [:]
 
     init(store: LFLessonStore, transport: @escaping Transport = { try await LFNotesService.send($0) },
-         keyProvider: @escaping @Sendable () throws -> String? = { try LFKeychain.read() }) {
+         keyProvider: @escaping @Sendable (URL) throws -> String? = { try LFKeychain.read(for: $0) }) {
         self.store = store
         self.transport = transport
         self.keyProvider = keyProvider
@@ -33,7 +33,7 @@ actor LFNotesService {
         let key: String
         do {
             try configuration.validate()
-            guard let value = try keyProvider(), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard let value = try keyProvider(configuration.endpoint), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return try await store.setNotesState(.notConfigured, error: LFError.notConfigured.localizedDescription, for: lessonID)
             }
             guard !value.contains("\n"), !value.contains("\r"), value.count <= 8192 else { throw LFError.invalid("API Key 格式无效。") }
@@ -132,6 +132,7 @@ actor LFNotesService {
                 (data, response) = try await transport(request)
             } catch {
                 if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                if let error = error as? LFError { throw error }
                 let retryable = (error as? URLError).map {
                     [.timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost].contains($0.code)
                 } ?? false
@@ -183,9 +184,17 @@ actor LFNotesService {
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
         let session = URLSession(configuration: config, delegate: LFRejectRedirects(), delegateQueue: nil)
-        defer { session.finishTasksAndInvalidate() }
-        let (data, response) = try await session.data(for: request)
+        defer { session.invalidateAndCancel() }
+        let (bytes, response) = try await session.bytes(for: request)
         guard let response = response as? HTTPURLResponse else { throw LFError.network }
+        guard response.expectedContentLength <= 1_048_576 else { throw LFError.invalidResponse("响应超过 1 MB") }
+        var data = Data()
+        data.reserveCapacity(Int(max(0, min(response.expectedContentLength, 1_048_576))))
+        for try await byte in bytes {
+            guard data.count < 1_048_576 else { throw LFError.invalidResponse("响应超过 1 MB") }
+            data.append(byte)
+        }
+        try Task.checkCancellation()
         return (data, response)
     }
 }

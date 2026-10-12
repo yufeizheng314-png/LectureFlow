@@ -8,6 +8,7 @@ struct LectureFlowView: View {
     @State private var showingNewLesson = false
     @State private var lessonTitle = ""
     @State private var editingNote: LFNoteBlock?
+    @State private var editingLessonID: UUID?
     @State private var sharedDocument: LectureShareDocument?
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -86,7 +87,9 @@ struct LectureFlowView: View {
         }
         .task { await model.initialize() }
         .sheet(isPresented: $showingSettings) { LectureCloudSettings(model: model) }
-        .sheet(item: $editingNote) { note in LectureNoteEditor(model: model, note: note) }
+        .sheet(item: $editingNote) { note in
+            if let lessonID = editingLessonID { LectureNoteEditor(model: model, note: note, lessonID: lessonID) }
+        }
         .sheet(item: $sharedDocument, onDismiss: { model.exportURL = nil }) { document in
             LectureShareView(url: document.url)
         }
@@ -138,6 +141,10 @@ struct LectureFlowView: View {
             if model.hasCapture {
                 Text("原音已录 \(clock(model.audio.recordedDuration)) · 转写到 \(clock(model.audio.transcribedThrough))。识别落后时继续保存原音。")
                     .font(.caption).foregroundStyle(.secondary)
+                if let error = model.audio.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
             HStack {
                 Toggle("AI 双语笔记", isOn: Binding(
@@ -226,7 +233,7 @@ struct LectureFlowView: View {
                     HStack {
                         Text(note.isEdited ? "已手动编辑" : "AI 笔记 · 请核对").font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("编辑") { editingNote = note }
+                        Button("编辑") { editingLessonID = lesson.id; editingNote = note }
                     }
                     Text(note.englishNotes).textSelection(.enabled)
                     Divider()
@@ -312,6 +319,7 @@ private struct LectureCloudSettings: View {
 private struct LectureNoteEditor: View {
     @ObservedObject var model: LectureFlowModel
     let note: LFNoteBlock
+    let lessonID: UUID
     @Environment(\.dismiss) private var dismiss
     @State private var english = ""
     @State private var chinese = ""
@@ -333,7 +341,7 @@ private struct LectureNoteEditor: View {
                     Button("保存") {
                         saving = true
                         Task {
-                            do { try await model.editNote(note, english: english, chinese: chinese); dismiss() }
+                            do { try await model.editNote(note, lessonID: lessonID, english: english, chinese: chinese); dismiss() }
                             catch { self.error = error.localizedDescription }
                             saving = false
                         }

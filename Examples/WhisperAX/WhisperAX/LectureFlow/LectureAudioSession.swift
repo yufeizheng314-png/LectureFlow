@@ -24,6 +24,7 @@ final class LectureAudioSession: ObservableObject {
     var onConfirmedSegments: (([LectureTranscriptSegment]) -> Void)?
     var isRecording: Bool { state == .recording }
     var isBusy: Bool { state == .starting || state == .recording || state == .stopping }
+    var sessionGeneration: UUID { runID }
 
     private var capture: LectureAudioCapture?
     private var checkpoint: LectureAudioCheckpoint?

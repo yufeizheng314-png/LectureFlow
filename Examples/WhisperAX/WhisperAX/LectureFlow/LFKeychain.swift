@@ -7,15 +7,31 @@ enum LFKeychain {
     private static let service = "LectureFlow.personal-cloud-key.v1"
     private static let account = "personal-api-key"
 
-    static func save(_ key: String) throws {
+    private struct BoundCredential: Codable {
+        let endpoint: String
+        let key: String
+    }
+
+    static func credentialData(_ key: String, for endpoint: URL) throws -> Data {
         let clean = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, clean.count <= 8192, !clean.contains("\n"), !clean.contains("\r") else {
             throw LFError.invalid("API Key 不能为空或包含换行。")
         }
+        try LFCloudConfiguration(endpoint: endpoint, model: "credential-validation").validate()
+        return try JSONEncoder().encode(BoundCredential(endpoint: endpoint.absoluteString, key: clean))
+    }
+
+    static func matchingKey(in data: Data, for endpoint: URL) -> String? {
+        guard let record = try? JSONDecoder().decode(BoundCredential.self, from: data),
+              record.endpoint == endpoint.absoluteString else { return nil }
+        return record.key
+    }
+
+    static func save(_ key: String, for endpoint: URL) throws {
+        let data = try credentialData(key, for: endpoint)
         #if canImport(Security)
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                    kSecAttrService as String: service, kSecAttrAccount as String: account]
-        let data = Data(clean.utf8)
         var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
             var item = query
@@ -29,7 +45,7 @@ enum LFKeychain {
         #endif
     }
 
-    static func read() throws -> String? {
+    static func read(for endpoint: URL) throws -> String? {
         #if canImport(Security)
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                    kSecAttrService as String: service, kSecAttrAccount as String: account,
@@ -37,10 +53,10 @@ enum LFKeychain {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data, let key = String(data: data, encoding: .utf8) else {
+        guard status == errSecSuccess, let data = result as? Data else {
             throw LFError.invalid("无法读取系统钥匙串中的 API Key（\(status)）。")
         }
-        return key
+        return matchingKey(in: data, for: endpoint)
         #else
         return nil
         #endif
