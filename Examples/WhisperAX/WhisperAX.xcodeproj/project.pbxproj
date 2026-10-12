@@ -44,6 +44,18 @@
 		1683EFF02B9FADFE002448CD /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1677AFB62B57618A008C61C0 /* Preview Assets.xcassets */; };
 		16EA36CF2B59E550006CA7CF /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 16EA36CE2B59E550006CA7CF /* WhisperKit */; };
 		AAAA36CF2B59E550006CA7CF /* SpeakerKit in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA36CE2B59E550006CA7CF /* SpeakerKit */; };
+		08F3B90F0E4C3C2AB4397EAF /* LectureFlowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3B45938225D720C1A2E24C /* LectureFlowModel.swift */; };
+		02FE5FD47E549B4FA6BA29B0 /* LectureFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768713E639448758DFDA4984 /* LectureFlowView.swift */; };
+		5671515E3E8BE51E067BE32E /* LecturePDFExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE0F04B3400583FA3BABB4B /* LecturePDFExport.swift */; };
+		462E5D5D2D0C6BAE492CE9A2 /* LectureAudioCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F40DE1E22A6EB9AD2A80EA9 /* LectureAudioCore.swift */; };
+		5A1EE06C9731B2F5C6BC7052 /* LecturePCMStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F65B15EC38395C6F48C1B4 /* LecturePCMStore.swift */; };
+		8077B201A4C33C7B50824A4E /* LectureAudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E498E808BAF5523A47B2FD /* LectureAudioSession.swift */; };
+		E36162F19833A4B3BEE5F8FA /* LFModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0861021522C6E4A59A953DC /* LFModels.swift */; };
+		290F4FDFAD0B746F887700BA /* LFKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545E1726942A9142FC0DCF7D /* LFKeychain.swift */; };
+		A799AD0FCE153CC3365B2ED3 /* LFLessonStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140EA4A7B3C6A96C458DA06A /* LFLessonStore.swift */; };
+		FF6F6C340F9D7B9719DF1514 /* LFNotesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70466F4DFEB72AFF81BF251 /* LFNotesService.swift */; };
+		2E00E791C392C9CCB4ED272E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */; };
+		ACE7235A77DDA4FC7CF1447A /* LectureFlow-Licenses.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -135,10 +147,22 @@
 		1677AFBE2B57618A008C61C0 /* WhisperAX_Watch_AppTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WhisperAX_Watch_AppTests.swift; sourceTree = "<group>"; };
 		1677AFE02B57678E008C61C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1677AFE52B57704E008C61C0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		167B345E2B05431E0076F261 /* WhisperAX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperAX.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		167B345E2B05431E0076F261 /* WhisperAX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LectureFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		167B34712B05431F0076F261 /* WhisperAXTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperAXTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		167B347B2B05431F0076F261 /* WhisperAXUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperAXUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		169144182CCEEE87009903CA /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		8D3B45938225D720C1A2E24C /* LectureFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureFlowModel.swift; sourceTree = "<group>"; };
+		768713E639448758DFDA4984 /* LectureFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureFlowView.swift; sourceTree = "<group>"; };
+		1DE0F04B3400583FA3BABB4B /* LecturePDFExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LecturePDFExport.swift; sourceTree = "<group>"; };
+		9F40DE1E22A6EB9AD2A80EA9 /* LectureAudioCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureAudioCore.swift; sourceTree = "<group>"; };
+		63F65B15EC38395C6F48C1B4 /* LecturePCMStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LecturePCMStore.swift; sourceTree = "<group>"; };
+		75E498E808BAF5523A47B2FD /* LectureAudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureAudioSession.swift; sourceTree = "<group>"; };
+		C0861021522C6E4A59A953DC /* LFModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFModels.swift; sourceTree = "<group>"; };
+		545E1726942A9142FC0DCF7D /* LFKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFKeychain.swift; sourceTree = "<group>"; };
+		140EA4A7B3C6A96C458DA06A /* LFLessonStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFLessonStore.swift; sourceTree = "<group>"; };
+		F70466F4DFEB72AFF81BF251 /* LFNotesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFNotesService.swift; sourceTree = "<group>"; };
+		716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = LectureFlow-Licenses.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -169,7 +193,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				16EA36CF2B59E550006CA7CF /* WhisperKit in Frameworks */,
-				AAAA36CF2B59E550006CA7CF /* SpeakerKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,6 +265,7 @@
 		1677AFA82B57618A008C61C0 /* WhisperAX */ = {
 			isa = PBXGroup;
 			children = (
+				DE2CA6F7CF5AD4FC3D07706E /* LectureFlow */,
 				1626683A2BB90CC9008F950A /* Info.plist */,
 				1677AFAB2B57618A008C61C0 /* WhisperAXApp.swift */,
 				1677AFE42B5769E5008C61C0 /* Views */,
@@ -307,6 +331,8 @@
 		1677AFD72B576375008C61C0 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */,
+				716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */,
 				1677AFE02B57678E008C61C0 /* Assets.xcassets */,
 				1677AFA92B57618A008C61C0 /* WhisperAX.entitlements */,
 			);
@@ -354,6 +380,23 @@
 			children = (
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		DE2CA6F7CF5AD4FC3D07706E /* LectureFlow */ = {
+			isa = PBXGroup;
+			children = (
+				8D3B45938225D720C1A2E24C /* LectureFlowModel.swift */,
+				768713E639448758DFDA4984 /* LectureFlowView.swift */,
+				1DE0F04B3400583FA3BABB4B /* LecturePDFExport.swift */,
+				9F40DE1E22A6EB9AD2A80EA9 /* LectureAudioCore.swift */,
+				63F65B15EC38395C6F48C1B4 /* LecturePCMStore.swift */,
+				75E498E808BAF5523A47B2FD /* LectureAudioSession.swift */,
+				C0861021522C6E4A59A953DC /* LFModels.swift */,
+				545E1726942A9142FC0DCF7D /* LFKeychain.swift */,
+				140EA4A7B3C6A96C458DA06A /* LFLessonStore.swift */,
+				F70466F4DFEB72AFF81BF251 /* LFNotesService.swift */,
+			);
+			path = LectureFlow;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -422,17 +465,14 @@
 				167B345A2B05431E0076F261 /* Sources */,
 				167B345B2B05431E0076F261 /* Frameworks */,
 				167B345C2B05431E0076F261 /* Resources */,
-				1621BFDF2B74BF6E007FA014 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				1683EFF22B9FAFAD002448CD /* PBXTargetDependency */,
 			);
 			name = WhisperAX;
 			packageProductDependencies = (
 				16EA36CE2B59E550006CA7CF /* WhisperKit */,
-				AAAA36CE2B59E550006CA7CF /* SpeakerKit */,
 			);
 			productName = BasicExample;
 			productReference = 167B345E2B05431E0076F261 /* WhisperAX.app */;
@@ -562,9 +602,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ACE7235A77DDA4FC7CF1447A /* LectureFlow-Licenses.txt in Resources */,
+				2E00E791C392C9CCB4ED272E /* PrivacyInfo.xcprivacy in Resources */,
 				1677AFC42B57618A008C61C0 /* Preview Assets.xcassets in Resources */,
-				1677AFCA2B57618A008C61C0 /* Preview Assets.xcassets in Resources */,
-				1677AFC92B57618A008C61C0 /* Assets.xcassets in Resources */,
 				1677AFE12B57678E008C61C0 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -624,7 +664,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1677AFE62B57704E008C61C0 /* ContentView.swift in Sources */,
+				08F3B90F0E4C3C2AB4397EAF /* LectureFlowModel.swift in Sources */,
+				02FE5FD47E549B4FA6BA29B0 /* LectureFlowView.swift in Sources */,
+				5671515E3E8BE51E067BE32E /* LecturePDFExport.swift in Sources */,
+				462E5D5D2D0C6BAE492CE9A2 /* LectureAudioCore.swift in Sources */,
+				5A1EE06C9731B2F5C6BC7052 /* LecturePCMStore.swift in Sources */,
+				8077B201A4C33C7B50824A4E /* LectureAudioSession.swift in Sources */,
+				E36162F19833A4B3BEE5F8FA /* LFModels.swift in Sources */,
+				290F4FDFAD0B746F887700BA /* LFKeychain.swift in Sources */,
+				A799AD0FCE153CC3365B2ED3 /* LFLessonStore.swift in Sources */,
+				FF6F6C340F9D7B9719DF1514 /* LFNotesService.swift in Sources */,
 				1677AFC22B57618A008C61C0 /* WhisperAXApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -962,7 +1011,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 169144182CCEEE87009903CA /* Debug.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = LectureFlowIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WhisperAX/Resources/WhisperAX.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -971,12 +1020,11 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"WhisperAX/Preview Content\"";
 				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
-				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WhisperAX/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to record audio from the microphone for transcription.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "LectureFlow records lecture audio on this iPad for local English transcription.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -989,20 +1037,18 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.4.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.argmax.whisperkit.WhisperAX${DEVELOPMENT_TEAM}";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yufeizheng.lectureflow;
+				PRODUCT_NAME = LectureFlow;
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 2;
 			};
 			name = Debug;
 		};
@@ -1010,7 +1056,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 169144182CCEEE87009903CA /* Debug.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = LectureFlowIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WhisperAX/Resources/WhisperAX.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -1018,12 +1064,11 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"WhisperAX/Preview Content\"";
 				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
-				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WhisperAX/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to record audio from the microphone for transcription.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "LectureFlow records lecture audio on this iPad for local English transcription.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -1036,18 +1081,16 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.4.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.argmax.whisperkit.WhisperAX${DEVELOPMENT_TEAM}";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yufeizheng.lectureflow;
+				PRODUCT_NAME = LectureFlow;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 2;
 			};
 			name = Release;
 		};
@@ -1071,7 +1114,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WhisperAX.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WhisperAX";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LectureFlow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LectureFlow";
 			};
 			name = Debug;
 		};
@@ -1095,7 +1138,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WhisperAX.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WhisperAX";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LectureFlow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LectureFlow";
 			};
 			name = Release;
 		};

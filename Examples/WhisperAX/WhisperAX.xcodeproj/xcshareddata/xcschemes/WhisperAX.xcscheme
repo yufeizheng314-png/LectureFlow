@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "167B345D2B05431E0076F261"
-               BuildableName = "WhisperAX.app"
+               BuildableName = "LectureFlow.app"
                BlueprintName = "WhisperAX"
                ReferencedContainer = "container:WhisperAX.xcodeproj">
             </BuildableReference>
@@ -68,7 +68,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "167B345D2B05431E0076F261"
-            BuildableName = "WhisperAX.app"
+            BuildableName = "LectureFlow.app"
             BlueprintName = "WhisperAX"
             ReferencedContainer = "container:WhisperAX.xcodeproj">
          </BuildableReference>
@@ -97,7 +97,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "167B345D2B05431E0076F261"
-            BuildableName = "WhisperAX.app"
+            BuildableName = "LectureFlow.app"
             BlueprintName = "WhisperAX"
             ReferencedContainer = "container:WhisperAX.xcodeproj">
          </BuildableReference>

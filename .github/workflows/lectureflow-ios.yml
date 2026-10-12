@@ -1,0 +1,117 @@
+name: LectureFlow iPad
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["lectureflow/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lectureflow-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Record tools and validate project
+        run: |
+          set -o pipefail
+          mkdir -p build/logs build/delivery
+          { git rev-parse HEAD; xcodebuild -version; swift --version; } | tee build/logs/toolchain.log
+          python3 scripts/lectureflow_validate.py | tee build/logs/configuration.log
+          plutil -lint Examples/WhisperAX/WhisperAX.xcodeproj/project.pbxproj
+          plutil -lint Examples/WhisperAX/WhisperAX/Info.plist
+          plutil -lint Examples/WhisperAX/WhisperAX/Resources/PrivacyInfo.xcprivacy
+      - name: Audio bounded buffer and WAV recovery checks
+        run: |
+          set -o pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LectureAudioCore.swift \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LecturePCMStore.swift \
+            Examples/WhisperAX/Validation/LectureAudioCoreChecks.swift \
+            -o build/audio-checks 2>&1 | tee build/logs/audio-compile.log
+          build/audio-checks 2>&1 | tee build/logs/audio-checks.log
+      - name: Lesson persistence and incremental cloud note checks
+        run: |
+          set -o pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LFModels.swift \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LFLessonStore.swift \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LFKeychain.swift \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LFNotesService.swift \
+            Tests/LectureFlowAssertions.swift -o build/notes-checks 2>&1 | tee build/logs/notes-compile.log
+          build/notes-checks 2>&1 | tee build/logs/notes-checks.log
+      - name: Upstream streaming cancellation and recording error regression checks
+        run: |
+          set -o pipefail
+          swift test --disable-automatic-resolution --filter AudioStreamTranscriberTests 2>&1 | tee build/logs/upstream-stream-tests.log
+      - name: Resolve pinned local package for iPad
+        run: |
+          set -o pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project Examples/WhisperAX/WhisperAX.xcodeproj -scheme WhisperAX \
+            -onlyUsePackageVersionsFromResolvedFile 2>&1 | tee build/logs/package-resolution.log
+          python3 scripts/lectureflow_validate.py
+      - name: Build unsigned Release for arm64 iPad
+        run: |
+          set -o pipefail
+          xcodebuild -project Examples/WhisperAX/WhisperAX.xcodeproj \
+            -scheme WhisperAX -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            build 2>&1 | tee build/logs/xcode-release.log
+      - name: Package and verify actual unsigned IPA
+        run: |
+          set -o pipefail
+          mkdir -p build/package/Payload
+          ditto build/DerivedData/Build/Products/Release-iphoneos/LectureFlow.app build/package/Payload/LectureFlow.app
+          (cd build/package && zip -qry ../delivery/LectureFlow-0.1.0-build1-unsigned.ipa Payload)
+          python3 scripts/lectureflow_validate.py --ipa build/delivery/LectureFlow-0.1.0-build1-unsigned.ipa \
+            --report build/delivery/IPA-VERIFICATION.json | tee build/logs/ipa-verification.log
+          cp Docs/LectureFlow/INSTALL-WINDOWS-zh.txt build/delivery/
+          cp Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt build/delivery/
+          cp Examples/WhisperAX/WhisperAX/Resources/LectureFlow-Licenses.txt build/delivery/
+          (cd build/delivery && shasum -a 256 LectureFlow-0.1.0-build1-unsigned.ipa > SHA256SUMS.txt)
+          (cd build/delivery && zip -q ../LectureFlow-0.1.0-Windows-install.zip ./*)
+          mv build/LectureFlow-0.1.0-Windows-install.zip build/delivery/
+          (cd build/delivery && shasum -a 256 LectureFlow-0.1.0-Windows-install.zip >> SHA256SUMS.txt)
+      - name: Simulator launch and initial iPad screenshot (supplemental)
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          xcodebuild -project Examples/WhisperAX/WhisperAX.xcodeproj \
+            -scheme WhisperAX -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/SimulatorData \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/logs/simulator-build.log
+          xcrun simctl list devices available -j > build/logs/simulator-devices.json
+          DEVICE=$(python3 -c 'import json; d=json.load(open("build/logs/simulator-devices.json")); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPad" in x["name"]))')
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/SimulatorData/Build/Products/Debug-iphonesimulator/LectureFlow.app
+          xcrun simctl launch "$DEVICE" com.yufeizheng.lectureflow | tee build/logs/simulator-launch.log
+          sleep 5
+          xcrun simctl io "$DEVICE" screenshot build/logs/ipad-first-launch.png
+          xcrun simctl shutdown "$DEVICE"
+      - name: Preserve IPA, source verification and all build logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: LectureFlow-0.1.0-${{ github.sha }}
+          path: |
+            build/delivery/
+            build/logs/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,28 @@
+LectureFlow 0.1.0
+
+This is an independently modified application based on the existing WhisperAX
+example in argmaxinc/argmax-oss-swift, not an official Argmax product.
+Upstream base commit: 9f99b5cb6a907730543823ad271b82532782a899.
+Actual GitHub fork: https://github.com/yufeizheng314-png/LectureFlow
+Upstream: https://github.com/argmaxinc/argmax-oss-swift
+
+Changes made in 2026: iPad lecture recording and durable storage, bounded local
+English transcription, optional incremental cloud bilingual notes, editing and
+export UI, separate LectureFlow name/icon, and an unsigned iPad build workflow.
+These additions are distributed under the repository's MIT License.
+
+The original LICENSE and NOTICES are retained unchanged. NOTICES includes the
+Apache-2.0 license and copyright attribution for the swift-transformers-derived
+code already incorporated by upstream. Both complete texts are included in the
+application and release package as LectureFlow-Licenses.txt.
+
+The audio capture lifecycle also adapts the MIT-licensed VivaDicta implementation
+by Anton Novoselov, commit d9bdb028f06bf448051e6e244291eb98ae9d9279.
+Its full copyright/license and exact source references are retained in
+Examples/WhisperAX/WhisperAX/LectureFlow/LectureFlowAudio-LICENSE.txt and included
+in LectureFlow-Licenses.txt in the app bundle and release package.
+
+Model weights are downloaded separately at runtime from the upstream model host;
+their terms and model card are distinct from the application source license.
+Cloud notes use only the user's configured service and may incur its charges.
+No affiliation with or endorsement by Argmax, Apple, or AltStore is implied.

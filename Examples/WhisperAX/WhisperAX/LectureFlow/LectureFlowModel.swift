@@ -1,0 +1,374 @@
+// LectureFlow integration of the existing WhisperAX / WhisperKit project.
+import AVFoundation
+import Combine
+import Foundation
+import WhisperKit
+
+@MainActor
+final class LectureFlowModel: ObservableObject {
+    @Published private(set) var lessons: [LFLesson] = []
+    @Published private(set) var lesson: LFLesson?
+    @Published private(set) var modelStatus = "尚未准备英文模型"
+    @Published private(set) var modelProgress: Double = 0
+    @Published private(set) var preparingModel = false
+    @Published private(set) var modelReady = false
+    @Published private(set) var busy = false
+    @Published private(set) var generatingNotes = false
+    @Published private(set) var configuration: LFCloudConfiguration?
+    @Published private(set) var autoNotesEnabled = false
+    @Published var errorMessage: String?
+    @Published var exportURL: URL?
+    @Published private(set) var playing = false
+    let audio = LectureAudioSession()
+
+    private var store: LFLessonStore?
+    private var notesService: LFNotesService?
+    private var whisper: WhisperKit?
+    private var observations = Set<AnyCancellable>()
+    private var notesTask: Task<Void, Never>?
+    private var notesToken: UUID?
+    private var notesNeedAnotherPass = false
+    private var player: AVAudioPlayer?
+    private struct Capture {
+        let id: UUID
+        let lessonID: UUID
+        let url: URL
+        let offset: Double
+    }
+    private var capture: Capture?
+    private var finalizingCapture = false
+
+    var hasCapture: Bool { capture != nil || finalizingCapture }
+    var canChangeLesson: Bool { !hasCapture && !busy }
+
+    init() {
+        do {
+            let storage = try LFLessonStore()
+            store = storage
+            notesService = LFNotesService(store: storage)
+            configuration = try LFCloudConfiguration.load()
+            // Reopening the app does not silently restart cloud transmission.
+            autoNotesEnabled = false
+        } catch { errorMessage = error.localizedDescription }
+        audio.$confirmedSegments.dropFirst().sink { [weak self] _ in
+            guard let self, let current = self.capture else { return }
+            Task { await self.persistConfirmed(for: current) }
+        }.store(in: &observations)
+        audio.$state.dropFirst().sink { [weak self] state in
+            guard let self else { return }
+            self.objectWillChange.send()
+            switch state {
+            case .finished, .interrupted, .failed:
+                if let message = self.audio.errorMessage { self.errorMessage = message }
+                if self.capture != nil { Task { await self.finishCapture() } }
+            default: break
+            }
+        }.store(in: &observations)
+        audio.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &observations)
+    }
+
+    func initialize() async {
+        guard let store else { return }
+        do {
+            lessons = try await store.listLessons()
+            if let first = lessons.first { lesson = try await store.loadLesson(first.id) }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func createLesson(title: String) async {
+        guard canChangeLesson, let store else { return }
+        busy = true
+        defer { busy = false }
+        await cancelNotes()
+        stopPlayback()
+        do {
+            lesson = try await store.createLesson(title: title)
+            lessons = try await store.listLessons()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func selectLesson(_ id: UUID) async {
+        guard canChangeLesson, lesson?.id != id, let store else { return }
+        busy = true
+        defer { busy = false }
+        await cancelNotes()
+        stopPlayback()
+        do { lesson = try await store.loadLesson(id) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    func prepareModel() async {
+        guard !preparingModel, !hasCapture else { return }
+        preparingModel = true
+        modelReady = false
+        modelProgress = 0
+        defer { preparingModel = false }
+        do {
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("LectureFlow/Models", isDirectory: true)
+            try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            let cachedName = UserDefaults.standard.string(forKey: "LectureFlow.english-model.folder")
+            let cached = cachedName.map { base.appendingPathComponent($0, isDirectory: true) }
+            let folder: URL
+            if let cached, FileManager.default.fileExists(atPath: cached.appendingPathComponent("AudioEncoder.mlmodelc").path) {
+                modelStatus = "正在加载已缓存的 tiny.en 模型"
+                folder = cached
+            } else {
+                modelStatus = "首次下载英文 tiny.en 模型，需要联网"
+                folder = try await WhisperKit.download(variant: "tiny.en", downloadBase: base) { [weak self] progress in
+                    Task { @MainActor in self?.modelProgress = progress.fractionCompleted }
+                }
+                let relative = folder.path.replacingOccurrences(of: base.path + "/", with: "")
+                UserDefaults.standard.set(relative, forKey: "LectureFlow.english-model.folder")
+            }
+            modelStatus = "正在准备本机模型，首次可能需要几分钟"
+            let kit = try await WhisperKit(WhisperKitConfig(
+                model: "tiny.en", modelFolder: folder.path,
+                verbose: false, logLevel: .none, prewarm: true, load: true, download: false
+            ))
+            guard kit.tokenizer != nil, kit.modelState == .loaded else {
+                throw LFError.invalid("模型尚未完整加载，请重新准备。")
+            }
+            whisper = kit
+            modelReady = true
+            modelProgress = 1
+            modelStatus = "tiny.en 已准备 · 英文识别在 iPad 本机运行"
+        } catch {
+            whisper = nil
+            modelStatus = "英文模型准备失败，可重试"
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func startRecording() async {
+        guard !hasCapture, !busy, let store, let whisper, modelReady, let current = lesson else { return }
+        busy = true
+        defer { busy = false }
+        stopPlayback()
+        do {
+            let url = try await store.nextRecordingURL(for: current.id)
+            let reservation = try await store.loadLesson(current.id)
+            let offset = reservation.audioFiles.first(where: { $0.fileName == url.lastPathComponent })?.offset ?? current.timelineDuration
+            let next = Capture(id: UUID(), lessonID: current.id, url: url, offset: offset)
+            capture = next
+            try await audio.start(using: whisper, outputURL: url, baseOffset: offset)
+            lesson = try await store.setRecordingState(.recording, for: current.id)
+        } catch {
+            errorMessage = error.localizedDescription
+            // A storage failure after the microphone starts must close it as well.
+            await audio.stop()
+            await finishCapture()
+        }
+    }
+
+    func pauseRecording() async {
+        guard capture != nil, !busy else { return }
+        busy = true
+        await audio.stop()
+        await finishCapture()
+        busy = false
+    }
+
+    private func persistConfirmed(for current: Capture) async {
+        guard capture?.id == current.id, let store else { return }
+        let segments = audio.confirmedSegments.map {
+            LFConfirmedSegment(id: $0.id, startTime: $0.start, endTime: $0.end, english: $0.text)
+        }
+        do {
+            let saved = try await store.appendConfirmedSegments(segments, to: current.lessonID)
+            if lesson?.id == current.lessonID { lesson = saved }
+            scheduleNotes()
+        } catch {
+            errorMessage = "转写保存失败：\(error.localizedDescription)。请保留原录音后重试。"
+            await audio.stop()
+        }
+    }
+
+    private func finishCapture() async {
+        guard !finalizingCapture, let current = capture, let store else { return }
+        finalizingCapture = true
+        defer { finalizingCapture = false }
+        await persistConfirmed(for: current)
+        do {
+            if FileManager.default.fileExists(atPath: current.url.path) {
+                _ = try await store.registerRecording(lessonID: current.lessonID, url: current.url,
+                                                      duration: audio.recordedDuration, offset: current.offset)
+            } else {
+                _ = try await store.cancelUnusedRecording(lessonID: current.lessonID, url: current.url)
+            }
+            let saved = try await store.setRecordingState(.paused, for: current.lessonID)
+            if lesson?.id == current.lessonID { lesson = saved }
+            lessons = try await store.listLessons()
+            capture = nil
+            scheduleNotes()
+        } catch {
+            errorMessage = "录音检查点保存失败：\(error.localizedDescription)。原音仍在课程目录，请重试保存。"
+            // Keep the reservation/capture so users cannot accidentally start a second session.
+        }
+    }
+
+    func saveCloudSettings(endpoint: String, model: String, newKey: String, enabled: Bool) async throws {
+        guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw LFError.invalid("请输入完整 HTTPS chat/completions 地址。")
+        }
+        let value = LFCloudConfiguration(endpoint: url, model: model.trimmingCharacters(in: .whitespacesAndNewlines))
+        try value.validate()
+        let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.isEmpty {
+            guard configuration?.endpoint == value.endpoint, try LFKeychain.read() != nil else {
+                throw LFError.invalid("首次设置或更换服务地址时，请重新填写该服务的 API Key。")
+            }
+        }
+        await cancelNotes()
+        if !key.isEmpty { try LFKeychain.save(key) }
+        try value.save()
+        configuration = value
+        autoNotesEnabled = enabled
+        if enabled { scheduleNotes(immediate: true) }
+    }
+
+    func setAutoNotes(_ enabled: Bool) async {
+        autoNotesEnabled = enabled && configuration != nil
+        if autoNotesEnabled { scheduleNotes(immediate: true) }
+        else { await cancelNotes() }
+    }
+
+    func generateNotesNow() {
+        guard autoNotesEnabled else {
+            errorMessage = "请先在 AI 设置中明确启用双语笔记。仅发送已确认文本，录音保留在本机。"
+            return
+        }
+        scheduleNotes(immediate: true)
+    }
+
+    private func scheduleNotes(immediate: Bool = false) {
+        guard autoNotesEnabled, let current = lesson, !current.segments.isEmpty,
+              let config = configuration, let notesService else { return }
+        guard immediate || current.notesState != .failed else { return }
+        guard notesTask == nil else { notesNeedAnotherPass = true; return }
+        notesNeedAnotherPass = false
+        let token = UUID()
+        notesToken = token
+        notesTask = Task { [weak self] in
+            guard let self else { return }
+            if !immediate {
+                do { try await Task.sleep(nanoseconds: 8_000_000_000) }
+                catch { return }
+            }
+            guard !Task.isCancelled, self.notesToken == token else { return }
+            self.generatingNotes = true
+            // Show each persisted batch while a longer cloud catch-up is still running.
+            let refresh = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+                    guard let self, self.notesToken == token, self.lesson?.id == current.id,
+                          let store = self.store else { return }
+                    do {
+                        let latest = try await store.loadLesson(current.id)
+                        guard self.notesToken == token, self.lesson?.id == current.id else { return }
+                        self.lesson = latest
+                    } catch { return }
+                }
+            }
+            defer { refresh.cancel() }
+            var succeeded = false
+            do {
+                let saved = try await notesService.generatePending(lessonID: current.id, configuration: config)
+                if self.lesson?.id == current.id, self.notesToken == token { self.lesson = saved }
+                if let store = self.store { self.lessons = try await store.listLessons() }
+                succeeded = true
+            } catch {
+                if !Task.isCancelled, self.notesToken == token { self.errorMessage = error.localizedDescription }
+                if let store = self.store, self.lesson?.id == current.id {
+                    self.lesson = try? await store.loadLesson(current.id)
+                }
+            }
+            if self.notesToken == token {
+                self.generatingNotes = false
+                self.notesTask = nil
+                self.notesToken = nil
+                if succeeded && self.notesNeedAnotherPass { self.scheduleNotes() }
+            }
+        }
+    }
+
+    private func cancelNotes() async {
+        notesToken = nil
+        notesTask?.cancel()
+        notesTask = nil
+        generatingNotes = false
+        notesNeedAnotherPass = false
+        if let id = lesson?.id, let notesService {
+            do { _ = try await notesService.cancel(lessonID: id) }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func editNote(_ note: LFNoteBlock, english: String, chinese: String) async throws {
+        guard let id = lesson?.id, let store else { return }
+        lesson = try await store.updateNote(lessonID: id, noteID: note.id, english: english, chinese: chinese)
+    }
+
+    func export(_ format: LFExportFormat) async {
+        guard let id = lesson?.id, let store else { return }
+        do { exportURL = try await store.exportLesson(id, format: format) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    func exportPDF() async {
+        guard let current = lesson, let store else { return }
+        do {
+            let textURL = try await store.exportLesson(current.id, format: .text)
+            let text = try String(contentsOf: textURL, encoding: .utf8)
+            let target = textURL.deletingPathExtension().appendingPathExtension("pdf")
+            try LecturePDFExport.write(text: text, title: current.title, to: target)
+            exportURL = target
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func play(at seconds: Double = 0, fileID: UUID? = nil) async {
+        guard !hasCapture, let current = lesson, let store else { return }
+        guard let file = fileID.flatMap({ id in current.audioFiles.first { $0.id == id } })
+                ?? current.audioFiles.first(where: { $0.duration > 0 && seconds >= $0.offset && seconds < $0.offset + $0.duration }) else { return }
+        do {
+            let url = try await store.recordingURL(lessonID: current.id, fileID: file.id)
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setActive(true)
+            let value = try AVAudioPlayer(contentsOf: url)
+            value.currentTime = max(0, seconds - file.offset)
+            guard value.play() else { throw LFError.invalid("录音暂时不能播放。") }
+            player = value
+            playing = true
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func stopPlayback() {
+        player?.stop()
+        player = nil
+        playing = false
+    }
+
+    func exportAudio(_ id: UUID) async {
+        guard !hasCapture, let current = lesson, let store else { return }
+        do { exportURL = try await store.recordingURL(lessonID: current.id, fileID: id) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    func recoverAudio(_ id: UUID) async {
+        guard !hasCapture, !busy, let current = lesson, let store, let whisper, modelReady,
+              let file = current.audioFiles.first(where: { $0.id == id }) else { return }
+        busy = true
+        defer { busy = false }
+        stopPlayback()
+        do {
+            let url = try await store.recordingURL(lessonID: current.id, fileID: id)
+            capture = Capture(id: UUID(), lessonID: current.id, url: url, offset: file.offset)
+            try await audio.resumeTranscription(using: whisper, from: url, baseOffset: file.offset)
+            await finishCapture()
+        } catch {
+            errorMessage = error.localizedDescription
+            await finishCapture()
+        }
+    }
+}

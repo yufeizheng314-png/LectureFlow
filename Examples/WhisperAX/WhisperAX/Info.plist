@@ -2,10 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSPrivacyAccessedAPITypes</key>
-	<dict>
-		<key>NSPrivacyAccessedAPIType</key>
-		<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
-	</dict>
+	<key>CFBundleDisplayName</key>
+	<string>LectureFlow</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LectureFlow records lecture audio on this iPad for local English transcription.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

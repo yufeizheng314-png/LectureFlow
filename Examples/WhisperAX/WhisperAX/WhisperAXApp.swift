@@ -7,7 +7,7 @@ import SwiftUI
 struct WhisperAXApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LectureFlowView()
             #if os(macOS)
                 .frame(minWidth: 1000, minHeight: 700)
             #endif

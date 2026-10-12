@@ -1,0 +1,33 @@
+LectureFlow 0.1.0 / build 1 — Windows + iPad 安装说明
+
+此包包含真正未签名的 arm64 IPA，必须由你自己的 Apple 账号签名后安装。
+目标：iPadOS 17 或更新版本；本轮目标设备为 iPad Air 11 英寸 M2。
+LectureFlow 是独立应用，bundle ID 为 com.yufeizheng.lectureflow，不覆盖 Wasic。
+
+1. 在 Windows 从 AltStore 官方说明安装 AltServer，并按说明安装所需的 Apple iTunes/iCloud 组件。
+   官方入口：https://altstore.io/ ，Windows 指引：https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
+2. 用 USB 连接并信任 iPad，在 AltServer 中选择 Install AltStore。只在官方 AltServer/AltStore 的系统流程输入自己的 Apple 账号。
+3. 按 iPad 提示信任开发者，并在“设置 > 隐私与安全性”按需启用开发者模式。重新启动后确认。
+4. 将本包中的 LectureFlow-0.1.0-build1-unsigned.ipa 传到 iPad“文件”，从 AltStore Classic 的 My Apps 的加号导入。
+5. 免费账号应用通常需要每 7 天刷新；保持 AltServer 可访问并按 AltStore 提示刷新。AltStore 本身也占用激活名额；同时保留 Wasic 时留意免费账号的 3 个激活应用名额。
+
+此 ZIP 是 IPA 与说明的文件包，不是 Windows EXE 安装器；没有代填账号、共享签名或凭据。
+可用 PowerShell 检查下载文件 SHA-256：Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.1.0-build1-unsigned.ipa'
+结果应与同一 Release 的 SHA256SUMS.txt 一致。Windows ZIP 本身的 SHA 见 Release 外部校验文件。
+
+第一次使用
+- 首次加载 tiny.en 模型需要联网下载。模型准备完成后，英语录音转写在本机进行；IPA 不内置模型权重。
+- 先做 1 分钟录音，确认麦克风许可、英语原文、课程保存和重启后恢复。
+- 云笔记为可选功能。需在设置填入你自己的 HTTPS OpenAI 兼容 chat/completions 完整地址、模型名和 Key。
+- 未配置云服务时仍可本地录音/转写。开启云笔记会把相应英语文字片段发往你选择的服务；服务商可能按量计费。
+- API Key 保存于本机系统钥匙串；此包和 GitHub 构建不包含任何个人 API Key。
+- 录音涉及他人时先取得适当同意。请妥善保存含课堂声音和文字的导出文件。
+
+限制与验收
+云端编译、纯逻辑测试及 IPA 检查不等同真机验收。免费签名安装、锁屏后台、中文云笔记质量、90 分钟发热/内存/续航需要按 DEVICE-ACCEPTANCE-zh.txt 在这台 iPad 实测。
+不要先用重要且不可重来的课堂作为第一次长录音测试。iPad 强制终止应用时不会继续录音。
+
+源码与上游
+https://github.com/yufeizheng314-png/LectureFlow
+本应用基于 argmaxinc/argmax-oss-swift 的现有 Examples/WhisperAX 工程改造，上游固定提交 9f99b5cb6a907730543823ad271b82532782a899。
+完整 MIT / 上游第三方许可随包保留于 LectureFlow-Licenses.txt。
