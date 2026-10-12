@@ -22,8 +22,10 @@ Its full copyright/license and exact source references are retained in
 Examples/WhisperAX/WhisperAX/LectureFlow/LectureFlowAudio-LICENSE.txt and included
 in LectureFlow-Licenses.txt in the app bundle and release package.
 
-Model weights are downloaded separately at runtime from the upstream model host;
-their terms and model card are distinct from the application source license.
+The tiny.en Core ML model is downloaded separately at runtime from
+https://huggingface.co/argmaxinc/whisperkit-coreml . That model card declares MIT;
+weights are not bundled in the IPA and their model card remains authoritative.
+This build has not downloaded model weights or measured their device performance.
 Cloud notes use only the user's configured service and may incur its charges.
 No affiliation with or endorsement by Argmax, Apple, or AltStore is implied.
 

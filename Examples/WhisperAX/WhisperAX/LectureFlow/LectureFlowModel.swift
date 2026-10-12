@@ -37,6 +37,7 @@ final class LectureFlowModel: ObservableObject {
     }
     private var capture: Capture?
     private var finalizingCapture = false
+    private var initialized = false
 
     var hasCapture: Bool { capture != nil || finalizingCapture }
     var canChangeLesson: Bool { !hasCapture && !busy }
@@ -69,7 +70,8 @@ final class LectureFlowModel: ObservableObject {
     }
 
     func initialize() async {
-        guard let store else { return }
+        guard !initialized, let store else { return }
+        initialized = true
         do {
             lessons = try await store.listLessons()
             if let first = lessons.first { lesson = try await store.loadLesson(first.id) }

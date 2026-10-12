@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 struct LectureFlowView: View {
-    @StateObject private var model = LectureFlowModel()
+    @ObservedObject var model: LectureFlowModel
     @State private var showingSettings = false
     @State private var showingNewLesson = false
     @State private var lessonTitle = ""

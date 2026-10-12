@@ -42,6 +42,7 @@ jobs:
             -o build/audio-checks 2>&1 | tee build/logs/audio-compile.log
           build/audio-checks 2>&1 | tee build/logs/audio-checks.log
       - name: Lesson persistence and incremental cloud note checks
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           swiftc -swift-version 5 -parse-as-library \
@@ -52,10 +53,12 @@ jobs:
             Tests/LectureFlowAssertions.swift -o build/notes-checks 2>&1 | tee build/logs/notes-compile.log
           build/notes-checks 2>&1 | tee build/logs/notes-checks.log
       - name: Upstream streaming cancellation and recording error regression checks
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           swift test --disable-automatic-resolution --filter AudioStreamTranscriberTests 2>&1 | tee build/logs/upstream-stream-tests.log
       - name: Resolve pinned local package for iPad
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           xcodebuild -resolvePackageDependencies \
@@ -63,6 +66,7 @@ jobs:
             -onlyUsePackageVersionsFromResolvedFile 2>&1 | tee build/logs/package-resolution.log
           python3 scripts/lectureflow_validate.py
       - name: Build unsigned Release for arm64 iPad
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           xcodebuild -project Examples/WhisperAX/WhisperAX.xcodeproj \

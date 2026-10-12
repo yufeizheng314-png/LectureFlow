@@ -9,8 +9,8 @@ actor LFLessonStore {
     init(rootURL: URL? = nil) throws {
         let base = rootURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LectureFlow", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         self.rootURL = base.standardizedFileURL.resolvingSymlinksInPath()
-        try FileManager.default.createDirectory(at: self.rootURL, withIntermediateDirectories: true)
     }
 
     func createLesson(title: String) throws -> LFLesson {
@@ -94,7 +94,7 @@ actor LFLessonStore {
     func cancelUnusedRecording(lessonID: UUID, url: URL) throws -> LFLesson {
         var lesson = try loadLesson(lessonID)
         let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
-        guard canonical.deletingLastPathComponent() == directory(lessonID).resolvingSymlinksInPath(),
+        guard canonical.deletingLastPathComponent().path == directory(lessonID).resolvingSymlinksInPath().path,
               let index = lesson.audioFiles.firstIndex(where: { $0.fileName == canonical.lastPathComponent }),
               lesson.audioFiles[index].duration == 0 else { throw LFError.invalid("只能取消本课程尚未写入的录音。") }
         if FileManager.default.fileExists(atPath: canonical.path) {
@@ -112,7 +112,7 @@ actor LFLessonStore {
         var lesson = try loadLesson(lessonID)
         let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
         guard duration.isFinite, duration >= 0, offset.isFinite, offset >= 0,
-              canonical.deletingLastPathComponent() == directory(lessonID).resolvingSymlinksInPath(),
+              canonical.deletingLastPathComponent().path == directory(lessonID).resolvingSymlinksInPath().path,
               let index = lesson.audioFiles.firstIndex(where: { $0.fileName == canonical.lastPathComponent }),
               abs(lesson.audioFiles[index].offset - offset) < 0.001,
               FileManager.default.fileExists(atPath: canonical.path) else {
@@ -133,7 +133,7 @@ actor LFLessonStore {
         let lesson = try loadLesson(lessonID)
         guard let file = lesson.audioFiles.first(where: { $0.id == fileID }) else { throw LFError.invalid("未知录音文件。") }
         let url = try recordingURL(lessonID: lessonID, file: file).resolvingSymlinksInPath()
-        guard url.deletingLastPathComponent() == directory(lessonID).resolvingSymlinksInPath() else {
+        guard url.deletingLastPathComponent().path == directory(lessonID).resolvingSymlinksInPath().path else {
             throw LFError.invalid("录音文件不在课程目录内。")
         }
         return url
@@ -277,7 +277,7 @@ actor LFLessonStore {
 
     private func persist(_ lesson: LFLesson) throws {
         let folder = directory(lesson.id)
-        guard folder.resolvingSymlinksInPath().deletingLastPathComponent() == rootURL else {
+        guard folder.resolvingSymlinksInPath().deletingLastPathComponent().path == rootURL.path else {
             throw LFError.invalid("课程目录越界。")
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

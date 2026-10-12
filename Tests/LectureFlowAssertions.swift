@@ -11,6 +11,13 @@ private func mustFail(_ body: () async throws -> Void) async {
     do { try await body(); preconditionFailure("Expected failure") } catch { }
 }
 
+private func checkNoStoredKey(root: URL) throws {
+    let allFiles = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!
+    for case let url as URL in allFiles where url.pathExtension == "json" {
+        check(!String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("fixture-key-never-on-disk"), "Key must never be persisted in lesson JSON")
+    }
+}
+
 private func response(for request: URLRequest, status: Int = 200, english: String = "New facts.") throws -> (Data, HTTPURLResponse) {
     let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
     let messages = body["messages"] as! [[String: String]]
@@ -158,10 +165,7 @@ struct LectureFlowAssertions {
         let plain = try await reopened.exportLesson(lesson.id, format: .text)
         check(try String(contentsOf: markdown, encoding: .utf8).contains("我的中文修改"), "Export must preserve edited Unicode notes")
         check(try String(contentsOf: plain, encoding: .utf8).contains(longText), "TXT export must include the full confirmed transcript")
-        let allFiles = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!
-        for case let url as URL in allFiles where url.pathExtension == "json" {
-            check(!String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("fixture-key-never-on-disk"), "Key must never be persisted in lesson JSON")
-        }
+        try checkNoStoredKey(root: root)
         print("LectureFlow assertions passed: dedup/conflict, 8k splitting, restart, token race, stale HTTP, retry, edit/context, isolation, audio containment, exports, key redaction.")
     }
 }

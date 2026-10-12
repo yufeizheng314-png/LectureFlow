@@ -4,10 +4,12 @@
 import SwiftUI
 
 @main
+@MainActor
 struct WhisperAXApp: App {
+    @StateObject private var lectureModel = LectureFlowModel()
     var body: some Scene {
         WindowGroup {
-            LectureFlowView()
+            LectureFlowView(model: lectureModel)
             #if os(macOS)
                 .frame(minWidth: 1000, minHeight: 700)
             #endif

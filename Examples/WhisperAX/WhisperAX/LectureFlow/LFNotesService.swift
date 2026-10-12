@@ -18,7 +18,7 @@ actor LFNotesService {
     private let keyProvider: @Sendable () throws -> String?
     private var active: [UUID: (token: UUID, task: Task<LFLesson, Error>)] = [:]
 
-    init(store: LFLessonStore, transport: @escaping Transport = LFNotesService.send,
+    init(store: LFLessonStore, transport: @escaping Transport = { try await LFNotesService.send($0) },
          keyProvider: @escaping @Sendable () throws -> String? = { try LFKeychain.read() }) {
         self.store = store
         self.transport = transport
