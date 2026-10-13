@@ -522,10 +522,17 @@ struct TranscribeCLI: AsyncParsableCommand {
         guard shape.count == 3, shape[0] == 1, shape[1] == 1 else {
             throw WhisperError.decodingLogitsFailed("Diagnostic logits must have shape [1, 1, vocabulary]")
         }
-        return (0..<shape[2]).map { ($0, logits[[0, 0, NSNumber(value: $0)]].doubleValue) }
-            .filter { $0.1.isFinite }
-            .sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
-            .prefix(5).map { $0 }
+        var entries: [(Int, Double)] = []
+        for token in 0..<shape[2] {
+            let coordinates: [NSNumber] = [0, 0, NSNumber(value: token)]
+            let value = logits[coordinates].doubleValue
+            if value.isFinite { entries.append((token, value)) }
+        }
+        entries.sort { left, right in
+            if left.1 == right.1 { return left.0 < right.0 }
+            return left.1 > right.1
+        }
+        return Array(entries.prefix(5))
     }
 
     private func diagnosticCacheValues(_ source: MLMultiArray, target: MLMultiArray, insertAt index: Int) throws -> [Double] {
