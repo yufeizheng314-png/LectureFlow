@@ -95,9 +95,38 @@ def installed_voices():
 
 
 def choose_voice(voices, language):
-    preferred = "en_US" if language == "en" else "zh_CN"
-    return next((voice for voice in voices if voice["locale"] == preferred),
-                next((voice for voice in voices if voice["locale"].startswith(language + "_")), None))
+    # say's locale ordering includes novelty voices (for example Albert) and
+    # does not imply suitability for classroom speech. Prefer natural voices.
+    preferred = {
+        "en": [("Samantha", "en_US"), ("Daniel", "en_GB"), ("Karen", "en_AU"),
+               ("Alex", "en_US"), ("Victoria", "en_US"), ("Moira", "en_IE"), ("Tessa", "en_ZA")],
+        "zh": [("Tingting", "zh_CN"), ("Meijia", "zh_TW")],
+    }
+    for name, locale in preferred.get(language, []):
+        for voice in voices:
+            base_name = voice["name"].split(" (")[0].casefold()
+            if base_name == name.casefold() and voice["locale"] == locale:
+                return voice
+    return None
+
+
+def valid_model_folder(path):
+    # Hub metadata mirrors the model directory names but contains download
+    # bookkeeping rather than loadable Core ML models. Never reuse that tree.
+    if not path.is_dir() or any(part in {".cache", ".git"} for part in path.parts):
+        return False
+    for component in ("MelSpectrogram", "AudioEncoder", "TextDecoder"):
+        model = path / (component + ".mlmodelc")
+        core = model / "coremldata.bin"
+        if not model.is_dir() or not core.is_file() or core.stat().st_size == 0:
+            return False
+    return True
+
+
+def cached_base_model(cache):
+    candidates = sorted(path.parent for path in (cache / "models").rglob("MelSpectrogram.mlmodelc")
+                        if path.parent.name == "openai_whisper-base" and valid_model_folder(path.parent))
+    return candidates[0] if candidates else None
 
 
 def run(args, report, repo, output):
@@ -110,7 +139,7 @@ def run(args, report, repo, output):
     for language, voice in selected.items():
         if voice is None:
             for volume in ("clear", "low"):
-                report["cases"].append({"language": language, "volume": volume, "status": "blocked", "reason": "No installed voice in this language; no voice installation attempted"})
+                report["cases"].append({"language": language, "volume": volume, "status": "blocked", "reason": "No installed preferred natural voice in this language; no voice installation attempted"})
     if not any(selected.values()):
         return
     transform = output / "asr-transform"
@@ -129,8 +158,8 @@ def run(args, report, repo, output):
     cache = args.cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     model_path = args.model_path.resolve() if args.model_path else None
-    if model_path and (not model_path.is_dir() or "base.en" in model_path.name or "base" not in model_path.name):
-        raise RuntimeError("Blocked: --model-path must contain the multilingual base model, not base.en")
+    if model_path and (not valid_model_folder(model_path) or "base.en" in model_path.name or "base" not in model_path.name):
+        raise RuntimeError("Blocked: --model-path must contain complete multilingual base Core ML models, not metadata or base.en")
     for language, fixture in CASES.items():
         voice = selected[language]
         if voice is None:
@@ -168,6 +197,8 @@ def run(args, report, repo, output):
                 argv = [cli, "transcribe", "--audio-path", submitted, "--language", language, "--task", "transcribe", "--skip-special-tokens",
                         "--word-timestamps", "--report", "--report-path", report_dir, "--download-tokenizer-path", cache / "tokenizers",
                         "--audio-encoder-compute-units", "cpuAndGPU", "--text-decoder-compute-units", "cpuAndGPU"]
+                if model_path is not None and not valid_model_folder(model_path):
+                    model_path = None
                 if model_path:
                     argv += ["--model-path", model_path]
                 else:
@@ -186,9 +217,7 @@ def run(args, report, repo, output):
                     case["status"] = "passed" if transcript.strip() and result.get("language") == language and sum(hits.values()) >= args.min_keyword_hits else "failed"
                     (output / f"{language}-{volume}-transcript.txt").write_text(transcript + "\n", encoding="utf-8")
                     if model_path is None:
-                        candidates = sorted(path.parent for path in (cache / "models").rglob("MelSpectrogram.mlmodelc") if path.parent.name == "openai_whisper-base")
-                        if candidates:
-                            model_path = candidates[0]
+                        model_path = cached_base_model(cache)
                     report["model_path"] = str(model_path) if model_path else "downloaded via CLI base selector"
                 except (OSError, ValueError, subprocess.SubprocessError, RuntimeError) as error:
                     case["reason"] = str(error)
@@ -224,7 +253,23 @@ def main():
     report = {"synthetic": True, "off_device": True, "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "model": "multilingual openai_whisper-base", "minimum_keyword_hits": args.min_keyword_hits, "cases": [],
               "scope": "Real repository CLI inference on local system-synthesized speech. Low copies use production normalization and PCM store in bounded file windows. No microphone, teacher recording, iPad ownership/latency, cloud AI quality or device acceptance is tested."}
+    report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    evidence_paths = ["Examples/WhisperAX/WhisperAX/LectureFlow/" + name for name in
+                      ("LectureAudioCore.swift", "LecturePCMStore.swift", "LectureAudioSession.swift", "LectureFlowModel.swift")]
+    evidence_paths += ["scripts/lectureflow_asr_smoke.py", "scripts/LectureFlowASRTransform.swift"]
+    report["source_sha256"] = {path: sha256(repo / path) for path in evidence_paths}
     try:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, timeout=10, check=True)
+        report["source_commit"] = commit.stdout.strip()
+        evidence_sources = [
+            "Examples/WhisperAX/WhisperAX/LectureFlow/LectureAudioCore.swift",
+            "Examples/WhisperAX/WhisperAX/LectureFlow/LecturePCMStore.swift",
+            "Examples/WhisperAX/WhisperAX/LectureFlow/LectureAudioSession.swift",
+            "Examples/WhisperAX/WhisperAX/LectureFlow/LectureFlowModel.swift",
+            "scripts/lectureflow_asr_smoke.py",
+            "scripts/LectureFlowASRTransform.swift",
+        ]
+        report["source_sha256"] = {relative: sha256(repo / relative) for relative in evidence_sources}
         run(args, report, repo, output)
     except (OSError, ValueError, subprocess.SubprocessError, RuntimeError) as error:
         report["infrastructure_error"] = str(error)
