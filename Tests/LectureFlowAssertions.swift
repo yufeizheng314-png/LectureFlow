@@ -96,6 +96,42 @@ private actor RollingHTTP {
     }
 }
 
+private actor UIFixtureHTTP {
+    var calls = 0
+    private var previous: LFNotesSummary?
+
+    func call(_ request: URLRequest) throws -> (Data, HTTPURLResponse) {
+        calls += 1
+        check(calls <= 2, "The UI fixture must generate exactly two rounds")
+        let context = try requestContext(request)
+        let inputs = context["new_confirmed_segments"] as! [[String: Any]]
+        let ids = inputs.map { $0["segmentID"] as! String }
+        check(context["mode"] as? String == "progressive", "UI fixture requests must use the real progressive path")
+        check(try summaryInContext(context) == previous, "UI fixture round two must receive round one's cumulative outline")
+        check(ids == (calls == 1 ? ["ui-water-1", "ui-water-2"] : ["ui-water-3"]), "Each UI fixture round must send only its new confirmed source ranges")
+        if calls == 2 {
+            check(try contextText(context["edited_notes"]!).contains("Automated fixture edit"), "UI fixture requests must preserve the earlier user-edit overlay")
+        }
+        let terms = [LFKeyTerm(english: "evaporation", chinese: "蒸发"), LFKeyTerm(english: "condensation", chinese: "凝结")]
+            + (calls == 2 ? [LFKeyTerm(english: "precipitation", chinese: "降水")] : [])
+        let summary = LFNotesSummary(
+            englishNotes: "Automated fixture: scripted responses for UI verification, not a live AI result.\n\nWater cycle\n1. The Sun supplies energy: liquid water evaporates into water vapor.\n2. Rising vapor cools: condensation forms cloud droplets."
+                + (calls == 2 ? "\n3. Droplets fall as precipitation. Water collects in rivers and oceans, completing a repeating cycle.\n\nProcess: solar energy → evaporation → cooling and condensation → precipitation → collection." : "\n\nThe next passage will explain how water returns to the surface."),
+            chineseNotes: "自动化测试夹具：使用预设响应验证界面与递推保存，不是真实云 AI 质量结果。\n\n水循环\n1. 能量来源：太阳提供热量，液态水蒸发成为水蒸气。\n2. 云的形成：水蒸气上升并冷却，凝结成云中的小水滴。"
+                + (calls == 2 ? "\n3. 返回地表：水滴形成降水，水汇入河流和海洋，循环继续。\n\n过程主线：太阳能 → 蒸发 → 冷却与凝结 → 降水 → 汇集。" : "\n\n待后文补充：水如何返回地表并完成循环。"),
+            keyTerms: terms)
+        var notes = LFGeneratedNotes(
+            englishNotes: calls == 1 ? "The opening explains the cycle's energy source and cloud formation: solar heat drives evaporation; cooling causes condensation." : "The final passage connects precipitation and collection to the earlier evaporation and condensation steps, completing the cycle.",
+            chineseNotes: calls == 1 ? "开头建立能量来源与云形成的联系：太阳热量促使水蒸发，冷却使水蒸气凝结。" : "末段把降水和汇集接到此前的蒸发、凝结过程，形成完整循环。",
+            keyTerms: terms, sourceSegmentIDs: ids)
+        notes.courseSummary = summary
+        previous = summary
+        let content = String(decoding: try JSONEncoder().encode(notes), as: UTF8.self)
+        let data = try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": "stop", "message": ["content": content]]]])
+        return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
 private actor HeldHTTP {
     var request: URLRequest?
     var pending: CheckedContinuation<(Data, HTTPURLResponse), Error>?
@@ -341,9 +377,57 @@ private func legacyRebuildChecks(root: URL, configuration: LFCloudConfiguration)
     check(try await migratedStore.loadLesson(lesson.id).courseSummary == savedSummary, "Cancelled summary reconstruction must not commit a late result")
 }
 
+private func createUIFixture(root: URL, configuration: LFCloudConfiguration) async throws {
+    let store = try LFLessonStore(rootURL: root)
+    let lesson = try await store.createLesson(title: "自动化测试课程 · 水循环（非真实云生成）")
+    _ = try await store.appendConfirmedSegments([
+        LFConfirmedSegment(id: "ui-water-1", startTime: 0, endTime: 18, english: "The Sun supplies energy for evaporation, turning liquid water into water vapor."),
+        LFConfirmedSegment(id: "ui-water-2", startTime: 18, endTime: 36, english: "As water vapor rises and cools, condensation produces tiny droplets that form clouds.")
+    ], to: lesson.id)
+    let mock = UIFixtureHTTP()
+    let service = LFNotesService(store: store, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture-key-never-on-disk" })
+    let first = try await service.generatePending(lessonID: lesson.id, configuration: configuration)
+    check(first.notes.count == 1 && first.courseSummary != nil, "UI fixture round one must persist an outline and an editable progress note")
+    let editedEnglish = first.notes[0].englishNotes + "\n\nAutomated fixture edit: keep the Sun as the cycle's energy source."
+    let editedChinese = first.notes[0].chineseNotes + "\n\n自动化测试编辑：保留太阳作为循环能量来源。"
+    _ = try await store.updateNote(lessonID: lesson.id, noteID: first.notes[0].id, english: editedEnglish, chinese: editedChinese)
+    _ = try await store.appendConfirmedSegments([
+        LFConfirmedSegment(id: "ui-water-3", startTime: 36, endTime: 54, english: "Droplets become precipitation; water collects in rivers and oceans, so the water cycle repeats.")
+    ], to: lesson.id)
+    _ = try await service.generatePending(lessonID: lesson.id, configuration: configuration)
+    _ = try await store.setRecordingState(.paused, for: lesson.id)
+    let reopened = try LFLessonStore(rootURL: root)
+    let saved = try await reopened.loadLesson(lesson.id)
+    check(await mock.calls == 2, "UI fixture must execute two real service rounds through injected HTTP")
+    check(saved.segments.count == 3 && saved.notes.count == 2 && saved.notes[0].englishNotes == editedEnglish && saved.notes[0].chineseNotes == editedChinese,
+          "UI fixture must preserve earlier edits while appending the second passage contribution")
+    check(saved.courseSummaryThrough == 54 && saved.courseSummary?.englishNotes.contains("evaporation") == true && saved.courseSummary?.englishNotes.contains("precipitation") == true,
+          "Persisted UI fixture must show both the earlier premise and later conclusion")
+    for format in [LFExportFormat.markdown, .text] {
+        let url = try await reopened.exportLesson(lesson.id, format: format)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        check(text.contains("自动化测试课程") && text.contains(saved.courseSummary!.englishNotes) && text.contains(saved.courseSummary!.chineseNotes) && text.contains("Automated fixture edit"),
+              "UI fixture exports must include cumulative bilingual notes and preserved edits with a fixture label")
+        print("UI fixture export: \(url.path)")
+    }
+    try checkNoStoredKey(root: root)
+    print("UI fixture lesson: \(lesson.id.uuidString)")
+    print("UI fixture JSON: \(root.appendingPathComponent(lesson.id.uuidString).appendingPathComponent("lesson.json").path)")
+    print("UI fixture is scripted automation data; no microphone, real cloud inference or iPad acceptance is implied.")
+}
+
 @main
 struct LectureFlowAssertions {
     static func main() async throws {
+        let arguments = CommandLine.arguments
+        let uiFixtureRoot: URL?
+        if arguments.count == 1 { uiFixtureRoot = nil }
+        else {
+            guard arguments.count == 3, arguments[1] == "--ui-fixture", !arguments[2].isEmpty else {
+                throw LFError.invalid("Usage: notes-checks [--ui-fixture <store-root>]")
+            }
+            uiFixtureRoot = URL(fileURLWithPath: arguments[2], isDirectory: true).standardizedFileURL
+        }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("LectureFlow-assertions-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try LFLessonStore(rootURL: root)
@@ -471,5 +555,6 @@ struct LectureFlowAssertions {
         try await legacyRebuildChecks(root: root.appendingPathComponent("legacy", isDirectory: true), configuration: config)
         try checkNoStoredKey(root: root)
         print("LectureFlow assertions passed: dedup/conflict, 8k splitting, restart, token race, stale HTTP, retry, rolling summary/context, accumulation/flush, legacy migration/rebuild, failure preservation, edit/audio/export preservation, isolation, key redaction.")
+        if let uiFixtureRoot { try await createUIFixture(root: uiFixtureRoot, configuration: config) }
     }
 }

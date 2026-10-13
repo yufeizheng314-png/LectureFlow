@@ -51,7 +51,7 @@ jobs:
             Examples/WhisperAX/WhisperAX/LectureFlow/LFKeychain.swift \
             Examples/WhisperAX/WhisperAX/LectureFlow/LFNotesService.swift \
             Tests/LectureFlowAssertions.swift -o build/notes-checks 2>&1 | tee build/logs/notes-compile.log
-          build/notes-checks 2>&1 | tee build/logs/notes-checks.log
+          build/notes-checks --ui-fixture build/ui-fixture 2>&1 | tee build/logs/notes-checks.log
       - name: Upstream streaming cancellation and recording error regression checks
         if: ${{ !cancelled() }}
         run: |
@@ -109,6 +109,13 @@ jobs:
           xcrun simctl launch "$DEVICE" com.yufeizheng.lectureflow | tee build/logs/simulator-launch.log
           sleep 5
           xcrun simctl io "$DEVICE" screenshot build/logs/ipad-first-launch.png
+          xcrun simctl terminate "$DEVICE" com.yufeizheng.lectureflow
+          APP_DATA=$(xcrun simctl get_app_container "$DEVICE" com.yufeizheng.lectureflow data)
+          mkdir -p "$APP_DATA/Documents/LectureFlow"
+          ditto build/ui-fixture "$APP_DATA/Documents/LectureFlow"
+          xcrun simctl launch "$DEVICE" com.yufeizheng.lectureflow | tee build/logs/simulator-fixture-launch.log
+          sleep 5
+          xcrun simctl io "$DEVICE" screenshot build/logs/ipad-progressive-notes.png
           xcrun simctl shutdown "$DEVICE"
       - name: Preserve IPA, source verification and all build logs
         if: always()
@@ -118,5 +125,6 @@ jobs:
           path: |
             build/delivery/
             build/logs/
+            build/ui-fixture/
           if-no-files-found: error
           retention-days: 30
