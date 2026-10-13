@@ -13,6 +13,9 @@ struct TranscribeCLIArguments: ParsableArguments {
     @Option(help: "Path of model files")
     var modelPath: String?
 
+    @Option(help: "Diagnostic file-transcription override for the audio encoder (.mlmodelc or .mlpackage); leaves downloaded models unchanged")
+    var diagnosticEncoderPath: String?
+
     @Option(help: "Model to download if no modelPath is provided")
     var model: String?
 

@@ -155,6 +155,12 @@ def run(args, report, repo, output):
         cli = Path(location.stdout.strip()) / "whisperkit-cli"
     if not cli.is_file():
         raise RuntimeError("Blocked: the repository CLI executable was not produced")
+    if args.encoder_model_path:
+        encoder = args.encoder_model_path.resolve()
+        if not encoder.is_dir() or encoder.suffix not in {".mlpackage", ".mlmodelc"}:
+            raise RuntimeError("Blocked: diagnostic encoder must be a model package or compiled model directory")
+        report["diagnostic_encoder_override"] = {"path": str(encoder), "files_sha256": {
+            str(path.relative_to(encoder)): sha256(path) for path in sorted(encoder.rglob("*")) if path.is_file()}}
     cache = args.cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     model_path = args.model_path.resolve() if args.model_path else None
@@ -205,6 +211,8 @@ def run(args, report, repo, output):
                     model_path = None
                 if args.compute_units == "cpuOnly":
                     argv.append("--tensor-cpu-only")
+                if args.encoder_model_path:
+                    argv += ["--diagnostic-encoder-path", args.encoder_model_path.resolve()]
                 if model_path:
                     argv += ["--model-path", model_path]
                 else:
@@ -244,6 +252,7 @@ def main():
     parser.add_argument("--cache", type=Path, default=repo / ".build/lectureflow-asr-cache")
     parser.add_argument("--cli", type=Path, help="An already-built repository whisperkit-cli executable")
     parser.add_argument("--model-path", type=Path, help="An existing multilingual openai_whisper-base folder")
+    parser.add_argument("--encoder-model-path", type=Path, help="Diagnostic encoder override; original downloaded models remain unchanged")
     parser.add_argument("--compute-units", choices=("cpuOnly", "cpuAndGPU", "cpuAndNeuralEngine"), default="cpuAndGPU",
                         help="Use the same compute units for mel, audio encoder and text decoder; recorded as off-device diagnostic configuration")
     parser.add_argument("--language-only", choices=("en", "zh"), help="Diagnostic subset: this language's clear/low cases only; the default still requires all four cases")

@@ -15,6 +15,10 @@ on:
         description: In ASR-only mode, compare JFK and natural English with and without timestamps
         type: boolean
         default: false
+      asr_export_encoder:
+        description: In ASR-only mode, test an official base encoder exported with FLOAT32 compute
+        type: boolean
+        default: false
       asr_compute_units:
         description: Core ML runtime for synthetic ASR checks on the Mac runner
         type: choice
@@ -27,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_controls }}-${{ inputs.asr_compute_units }}
+  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_controls }}-${{ inputs.asr_export_encoder }}-${{ inputs.asr_compute_units }}
   cancel-in-progress: false
 
 jobs:
@@ -195,13 +199,28 @@ jobs:
         run: |
           set -o pipefail
           swift test --disable-automatic-resolution --filter TokenSamplerFallbackTests 2>&1 | tee build/logs/token-sampler-tests.log
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: ${{ inputs.asr_export_encoder }}
+        with:
+          python-version: '3.12'
+      - name: Export official encoder with FLOAT32 compute for diagnosis
+        if: ${{ inputs.asr_export_encoder }}
+        run: |
+          set -o pipefail
+          python3 -m venv build/encoder-venv
+          build/encoder-venv/bin/python -m pip install coremltools==9.0 torch==2.7.0 numpy==1.26.4 openai-whisper==20250625 2>&1 | tee build/logs/encoder-dependencies.log
+          build/encoder-venv/bin/python scripts/lectureflow_export_encoder.py --output-root build/encoder-export 2>&1 | tee build/logs/encoder-export.log
       - name: Actual bilingual clear and low-volume inference
         if: ${{ !cancelled() && !inputs.asr_controls }}
         env:
           COMPUTE_UNITS: ${{ inputs.asr_compute_units }}
         run: |
           set -o pipefail
-          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "$COMPUTE_UNITS" | tee build/logs/asr-smoke.log
+          ENCODER_ARGS=()
+          if [[ "${{ inputs.asr_export_encoder }}" == "true" ]]; then
+            ENCODER_ARGS+=(--encoder-model-path build/encoder-export/AudioEncoder.mlpackage)
+          fi
+          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "$COMPUTE_UNITS" "${ENCODER_ARGS[@]}" | tee build/logs/asr-smoke.log
       - name: Independent JFK and natural English timestamp controls
         if: ${{ !cancelled() && inputs.asr_controls }}
         env:
@@ -218,4 +237,7 @@ jobs:
             build/logs
             build/asr-smoke
             build/asr-controls
+            build/encoder-export/AudioEncoder.mlpackage
+            build/encoder-export/ENCODER-EXPORT.json
+            build/encoder-export/encoder-float32.mil.txt
           retention-days: 30

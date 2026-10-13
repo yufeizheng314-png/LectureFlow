@@ -129,6 +129,28 @@ struct TranscribeCLI: AsyncParsableCommand {
         let config = TranscribeCLIUtils.createWhisperKitConfig(from: cliArguments)
         let whisperKit = try await WhisperKit(config)
 
+        if let override = cliArguments.diagnosticEncoderPath {
+            guard let encoder = whisperKit.audioEncoder as? AudioEncoder else {
+                throw WhisperError.modelsUnavailable("Diagnostic override requires the Core ML AudioEncoder")
+            }
+            let source = URL(fileURLWithPath: FileManager.resolveAbsolutePath(override))
+            guard FileManager.default.fileExists(atPath: source.path),
+                  ["mlmodelc", "mlpackage", "mlmodel"].contains(source.pathExtension) else {
+                throw WhisperError.modelsUnavailable("Diagnostic encoder model path is invalid")
+            }
+            let compiled: URL
+            if source.pathExtension == "mlmodelc" {
+                compiled = source
+            } else {
+                compiled = try await MLModel.compileModel(at: source)
+            }
+            try await encoder.loadModel(at: compiled, computeUnits: cliArguments.audioEncoderComputeUnits.asMLComputeUnits)
+            guard encoder.embedSize == 512, encoder.sequenceLength == 1500, whisperKit.modelVariant == .base else {
+                throw WhisperError.modelsUnavailable("Diagnostic encoder must match multilingual base dimensions")
+            }
+            print("Diagnostic encoder override loaded: \(source.path); downloaded model folder remains unchanged")
+        }
+
         if cliArguments.diagnosticTensors {
             print("Diagnostic model: \(whisperKit.modelVariant), multilingual: \(whisperKit.textDecoder.isModelMultilingual), mel bands: \(String(describing: whisperKit.featureExtractor.melCount)), encoder dimension: \(String(describing: whisperKit.audioEncoder.embedSize)), decoder cache dimension: \(String(describing: whisperKit.textDecoder.kvCacheEmbedDim))")
             for path in resolvedAudioPaths {
