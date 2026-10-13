@@ -117,6 +117,11 @@ jobs:
           sleep 5
           xcrun simctl io "$DEVICE" screenshot build/logs/ipad-progressive-notes.png
           xcrun simctl shutdown "$DEVICE"
+      - name: Synthetic English, Chinese and quiet-speech local model checks
+        timeout-minutes: 25
+        run: |
+          set -o pipefail
+          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke 2>&1 | tee build/logs/asr-smoke-terminal.log
       - name: Preserve IPA, source verification and all build logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -126,5 +131,6 @@ jobs:
             build/delivery/
             build/logs/
             build/ui-fixture/
+            build/asr-smoke/
           if-no-files-found: error
           retention-days: 30

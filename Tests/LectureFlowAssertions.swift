@@ -483,11 +483,11 @@ private func chineseCourseChecks(root: URL, configuration: LFCloudConfiguration)
         LFConfirmedSegment(id: "ui-water-1", startTime: 0, endTime: 18, english: "太阳提供能量，使液态水蒸发成为水蒸气。"),
         LFConfirmedSegment(id: "ui-water-2", startTime: 18, endTime: 36, english: "水蒸气上升后冷却，凝……结成小水滴，形成云。")
     ]
-    _ = try await store.appendConfirmedSegments(opening, to: lesson.id)
     let audioURL = try await store.nextRecordingURL(for: lesson.id)
     let audio = Data([82, 73, 70, 70, 1, 3, 5, 7])
     try audio.write(to: audioURL)
     _ = try await store.registerRecording(lessonID: lesson.id, url: audioURL, duration: 54, offset: 0)
+    _ = try await store.appendConfirmedSegments(opening, to: lesson.id)
     let mock = UIFixtureHTTP(sourceLanguage: "zh")
     let service = LFNotesService(store: store, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture-key-never-on-disk" })
     let first = try await service.generatePending(lessonID: lesson.id, configuration: configuration)

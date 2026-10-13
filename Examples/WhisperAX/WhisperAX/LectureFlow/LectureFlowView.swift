@@ -32,7 +32,7 @@ struct LectureFlowView: View {
                         .listRowBackground(model.lesson?.id == lesson.id ? Color.accentColor.opacity(0.12) : Color.clear)
                     }
                     if model.lessons.isEmpty {
-                        Text("创建课程，准备英文模型后开始录音。")
+                        Text("创建课程，准备中英课堂模型后开始录音。")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -349,8 +349,8 @@ private struct LectureCloudSettings: View {
                 }
                 Section {
                     Text("服务必须支持 chat/completions 和 JSON 对象输出。费用由你的服务账号承担。Key 仅保存在本机钥匙串；换服务地址需重新填 Key。")
-                    Text("启用后会向填写的服务发送已确认英文、来源片段 ID 和已有笔记。麦克风原音不会随 AI 请求上传。每次重新打开 App 都需再次启用 AI。")
-                    Text("英文模型首次从 Hugging Face 下载；加载完成后英文识别在 iPad 本机进行。")
+                    Text("启用后会向填写的服务发送课程标题、已确认原文、来源片段 ID、已有笔记、手动编辑和累计课程梳理。麦克风原音不会随 AI 请求上传。每次重新打开 App 都需再次启用 AI。")
+                    Text("中英课堂模型首次从 Hugging Face 下载；加载完成后，英文或中文识别在 iPad 本机进行。")
                 }
                 if let error { Section { Text(error).foregroundStyle(.red) } }
             }

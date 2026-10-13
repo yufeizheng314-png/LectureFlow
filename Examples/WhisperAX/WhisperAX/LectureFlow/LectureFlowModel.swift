@@ -8,7 +8,7 @@ import WhisperKit
 final class LectureFlowModel: ObservableObject {
     @Published private(set) var lessons: [LFLesson] = []
     @Published private(set) var lesson: LFLesson?
-    @Published private(set) var modelStatus = "尚未准备英文模型"
+    @Published private(set) var modelStatus = "尚未准备中英课堂模型"
     @Published private(set) var modelProgress: Double = 0
     @Published private(set) var preparingModel = false
     @Published private(set) var modelReady = false

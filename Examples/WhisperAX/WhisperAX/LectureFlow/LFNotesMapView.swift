@@ -6,13 +6,17 @@ struct LFNotesMapView: View {
     let nodes: [LFConceptNode]
     var viewportHeight: CGFloat = 420
     @State private var zoom: CGFloat = 0.85
+    @State private var viewportWidth: CGFloat = 600
     @State private var selection: LFMapSelection?
 
     private let rootID = "lectureflow-map-root"
     private let palette: [Color] = [.blue, .teal, .purple, .orange, .indigo, .pink]
+    private var courseConcept: LFConceptNode? {
+        nodes.count == 1 && !nodes[0].children.isEmpty ? nodes[0] : nil
+    }
 
     var body: some View {
-        let layout = LFMapLayout(nodes: nodes)
+        let layout = LFMapLayout(nodes: courseConcept?.children ?? nodes)
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
@@ -28,7 +32,7 @@ struct LFNotesMapView: View {
                         .disabled(zoom >= 1.65)
                         .accessibilityLabel("放大导图")
                     Button {
-                        zoom = 0.85
+                        fit(layout)
                         withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(rootID, anchor: .center) }
                     } label: { Image(systemName: "scope") }
                         .accessibilityLabel("回到课程中心")
@@ -59,11 +63,18 @@ struct LFNotesMapView: View {
                         }
 
                         Button {
-                            selection = LFMapSelection(id: rootID, english: title, chinese: "", isRoot: true)
+                            selection = LFMapSelection(id: rootID, english: courseConcept.map { title + "\n\n" + $0.english } ?? title,
+                                                       chinese: courseConcept?.chinese ?? "", isRoot: true)
                         } label: {
                             VStack(spacing: 7) {
                                 Image(systemName: "book.closed.fill").font(.title3)
-                                Text(title).font(.headline).lineLimit(3).multilineTextAlignment(.center)
+                                if let concept = courseConcept {
+                                    Text(title).font(.caption).lineLimit(1)
+                                    Text(concept.english).font(.headline).lineLimit(2)
+                                    Text(concept.chinese).font(.subheadline).lineLimit(2)
+                                } else {
+                                    Text(title).font(.headline).lineLimit(3)
+                                }
                             }
                             .padding(14)
                             .frame(width: LFMapLayout.rootWidth, height: LFMapLayout.rootHeight)
@@ -81,6 +92,16 @@ struct LFNotesMapView: View {
                     .frame(width: layout.size.width * zoom, height: layout.size.height * zoom, alignment: .topLeading)
                 }
                 .frame(height: viewportHeight)
+                .background {
+                    GeometryReader { viewport in
+                        Color.clear.onAppear {
+                            viewportWidth = viewport.size.width
+                            fit(layout)
+                            proxy.scrollTo(rootID, anchor: .center)
+                        }
+                        .onChange(of: viewport.size.width) { _, width in viewportWidth = width }
+                    }
+                }
                 .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.07), lineWidth: 1))
                 .onAppear { proxy.scrollTo(rootID, anchor: .center) }
@@ -113,6 +134,11 @@ struct LFNotesMapView: View {
 
     private func changeZoom(_ amount: CGFloat) {
         zoom = min(1.65, max(0.45, zoom + amount))
+    }
+
+    private func fit(_ layout: LFMapLayout) {
+        zoom = max(0.45, min(0.85, min((viewportWidth - 24) / layout.size.width,
+                                      (viewportHeight - 24) / layout.size.height)))
     }
 
     private func conceptCard(_ item: LFMapItem) -> some View {
@@ -181,7 +207,7 @@ private struct LFMapLayout {
     static let cardWidth: CGFloat = 196
     static let cardHeight: CGFloat = 112
     static let rootWidth: CGFloat = 220
-    static let rootHeight: CGFloat = 120
+    static let rootHeight: CGFloat = 144
     static let columnGap: CGFloat = 44
     static let rowGap: CGFloat = 18
     private static let margin: CGFloat = 30
