@@ -198,7 +198,7 @@ def run(args, report, repo, output):
                 argv = [cli, "transcribe", "--audio-path", submitted, "--language", language, "--task", "transcribe", "--skip-special-tokens",
                         "--word-timestamps", "--report", "--report-path", report_dir, "--download-tokenizer-path", cache / "tokenizers",
                         "--verbose", "--use-prefill-prompt", "--temperature-fallback-count", "1", "--concurrent-worker-count", "1",
-                        "--chunking-strategy", "none", "--first-token-log-prob-threshold", "-1.5",
+                        "--chunking-strategy", "none", "--first-token-log-prob-threshold=-1.5",
                         "--mel-compute-units", args.compute_units,
                         "--audio-encoder-compute-units", args.compute_units, "--text-decoder-compute-units", args.compute_units]
                 if model_path is not None and not valid_model_folder(model_path):
@@ -280,6 +280,7 @@ def main():
             "scripts/LectureFlowASRTransform.swift",
             "Sources/ArgmaxCLI/TranscribeCLIArguments.swift",
             "Sources/ArgmaxCLI/TranscribeCLIUtils.swift",
+            "Sources/WhisperKit/Core/Text/TokenSampler.swift",
         ]
         report["source_sha256"] = {relative: sha256(repo / relative) for relative in evidence_sources}
         run(args, report, repo, output)

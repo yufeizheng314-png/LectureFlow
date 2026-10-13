@@ -91,6 +91,43 @@ final class TokenSamplerFallbackTests: XCTestCase {
         }
     }
 
+    func testTopKDrawHandlesSaturatedCDFEndpointsAndInvalidMass() throws {
+        // A saturated CDF must retain the dominant token on every platform,
+        // independently of the OS-specific tie order in MLTensor.argsort().
+        for uniform in [Float(0), 0.25, 0.99999, 1] {
+            let result = try XCTUnwrap(GreedyTokenSampler.sampleTopK(
+                probabilities: [1, 1.9e-25, 5.8e-30, 7.4e-31, 6.1e-32],
+                tokenIDs: [10, 11, 12, 13, 14], uniform: uniform))
+            XCTAssertEqual(result.token, 10)
+            XCTAssertEqual(result.logprob, 0)
+        }
+
+        // Top-k contains only 0.3 of the original softmax mass. Sampling uses
+        // that total, but confidence must remain log(0.2), not log(2/3).
+        for uniform in [Float(-1), 0, 0.5] {
+            let result = try XCTUnwrap(GreedyTokenSampler.sampleTopK(
+                probabilities: [0, 0.2, 0.1, 0], tokenIDs: [10, 20, 30, 40], uniform: uniform))
+            XCTAssertEqual(result.token, 20)
+            XCTAssertEqual(result.logprob, log(Float(0.2)), accuracy: 0.000001)
+        }
+        for uniform in [Float(0.75), 1, 2] {
+            let result = try XCTUnwrap(GreedyTokenSampler.sampleTopK(
+                probabilities: [0, 0.2, 0.1, 0], tokenIDs: [10, 20, 30, 40], uniform: uniform))
+            XCTAssertEqual(result.token, 30, "Endpoints must not select trailing zero mass")
+            XCTAssertEqual(result.logprob, log(Float(0.1)), accuracy: 0.000001)
+        }
+
+        let invalid: [([Float], [Int], Float)] = [
+            ([], [], 0), ([0, 0], [10, 20], 0), ([0.2], [], 0),
+            ([.nan, 0.2], [10, 20], 0), ([.infinity, 0.2], [10, 20], 0),
+            ([-0.1, 0.2], [10, 20], 0), ([0.2], [10], .nan), ([0.2], [10], .infinity),
+        ]
+        for (probabilities, tokenIDs, uniform) in invalid {
+            XCTAssertNil(GreedyTokenSampler.sampleTopK(probabilities: probabilities, tokenIDs: tokenIDs,
+                                                      uniform: uniform))
+        }
+    }
+
     private func makeLogits(_ active: [Int: Float], vocabularySize: Int = 51866,
                             floor: Float = -10) throws -> MLMultiArray {
         #if (os(macOS) || targetEnvironment(macCatalyst)) && arch(x86_64)

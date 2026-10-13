@@ -43,8 +43,8 @@ open class GreedyTokenSampler: TokenSampling {
         // Use MLTensor operations if available for sampling
         // Reference: https://github.com/huggingface/swift-transformers/blob/preview/Sources/Generation/Decoders.swift
         var logitsTensor = MLTensor(MLShapedArray<FloatType>(logits)).cast(to: Float.self)
-        var nextTokenTensor: MLTensor
-        var nextLogprobTensor: MLTensor
+        let nextTokenTensor: MLTensor
+        let nextLogprobTensor: MLTensor
 
         if temperature != 0.0 {
             // Scale logits by temperature if > 0
@@ -57,20 +57,14 @@ open class GreedyTokenSampler: TokenSampling {
         if temperature != 0.0 {
             // top-k multinomial sampling
             let (topKProbs, topKIndices) = softmaxScores.topK(decodingOptions.topK)
-
-            let rnd = topKProbs.sum() * Float.random(in: 0..<1)
-            var accumTopKProbs = topKProbs.cumulativeSum(alongAxis: -1)
-            accumTopKProbs += (accumTopKProbs .< rnd) * 100.0
-            let topKIndex = accumTopKProbs.argsort()[..., 0]
-
-            nextTokenTensor = topKIndices.gathering(
-                atIndices: topKIndex,
-                alongAxis: topKIndices.rank - 1
-            )
-            nextLogprobTensor = topKProbs.gathering(
-                atIndices: topKIndex,
-                alongAxis: topKIndices.rank - 1
-            ).log()
+            let probabilities = await topKProbs.toFloatArray()
+            let tokenIDs = await topKIndices.toIntArray()
+            guard let result = Self.sampleTopK(probabilities: probabilities, tokenIDs: tokenIDs,
+                                              uniform: Float.random(in: 0..<1)) else {
+                Logging.error("Top-k sampling received invalid probabilities")
+                return (token: eotToken, logprob: -.infinity)
+            }
+            return result
         } else {
             nextTokenTensor = logitsTensor.argmax(alongAxis: -1)
             nextLogprobTensor = softmaxScores.gathering(atIndices: nextTokenTensor, alongAxis: -1).log()
@@ -82,6 +76,35 @@ open class GreedyTokenSampler: TokenSampling {
         )
     }
     #endif
+
+    /// Draw from the top-k mass in its original order. Sorting cumulative sums
+    /// cannot resolve a saturated CDF: several positions can round to the same
+    /// value, allowing a negligible tail token to win instead of the first one.
+    static func sampleTopK(probabilities: [Float], tokenIDs: [Int], uniform: Float) -> (token: Int, logprob: Float)? {
+        guard !probabilities.isEmpty, probabilities.count == tokenIDs.count,
+              uniform.isFinite,
+              probabilities.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return nil }
+        let total = probabilities.reduce(0.0) { $0 + Double($1) }
+        guard total.isFinite, total > 0 else { return nil }
+
+        // Clamp caller-supplied endpoints to [0, 1); runtime draws already use
+        // that range. Double accumulation also avoids avoidable Float rounding.
+        let unit = min(max(Double(uniform), 0), Double(1).nextDown)
+        let target = min(unit * total, total.nextDown)
+        var cumulative = 0.0
+        var lastPositive: Int?
+        for position in probabilities.indices where probabilities[position] > 0 {
+            cumulative += Double(probabilities[position])
+            lastPositive = position
+            if target < cumulative {
+                return (token: tokenIDs[position], logprob: log(probabilities[position]))
+            }
+        }
+        // Only a roundoff discrepancy at the total can reach this path; do not
+        // select an underflowed zero-probability entry at the end of top-k.
+        guard let position = lastPositive else { return nil }
+        return (token: tokenIDs[position], logprob: log(probabilities[position]))
+    }
 
     private func sampleWithBNNS(logits: MLMultiArray) -> (token: Int, logprob: Float) {
         // TODO: BNNS operations here are deprecated, replace with vDSP or MLX

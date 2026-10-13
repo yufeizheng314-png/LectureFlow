@@ -5,6 +5,7 @@ struct LFNotesMapView: View {
     let title: String
     let nodes: [LFConceptNode]
     var viewportHeight: CGFloat = 420
+    var maximumFitZoom: CGFloat = 0.85
     @State private var zoom: CGFloat = 0.85
     @State private var viewportWidth: CGFloat = 600
     @State private var selection: LFMapSelection?
@@ -101,7 +102,15 @@ struct LFNotesMapView: View {
                             fit(layout)
                             proxy.scrollTo(rootID, anchor: .center)
                         }
-                        .onChange(of: viewport.size.width) { _, width in viewportWidth = width }
+                        .onChange(of: viewport.size.width) { _, width in
+                            viewportWidth = width
+                            fit(layout)
+                            proxy.scrollTo(rootID, anchor: .center)
+                        }
+                        .onChange(of: viewportHeight) { _, _ in
+                            fit(layout)
+                            proxy.scrollTo(rootID, anchor: .center)
+                        }
                     }
                 }
                 .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
@@ -139,7 +148,8 @@ struct LFNotesMapView: View {
     }
 
     private func fit(_ layout: LFMapLayout) {
-        zoom = max(0.45, min(0.85, min((viewportWidth - 24) / layout.size.width,
+        guard viewportWidth > 24, viewportHeight > 24 else { return }
+        zoom = max(0.45, min(maximumFitZoom, min((viewportWidth - 24) / layout.size.width,
                                       (viewportHeight - 24) / layout.size.height)))
     }
 

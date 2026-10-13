@@ -9,6 +9,8 @@
 - 已有课程可重建累计梳理和导图；保留历史过程笔记、人工编辑与原音。语言选择和导图不要求另申请 API Key，现有 DeepSeek 配置继续使用。
 - bundle ID 保持 `com.yufeizheng.lectureflow`。升级前先逐课导出笔记和原音备份，再用原签名账号覆盖安装，不先卸载应用；升级后核对旧课程和设置。
 - CI 增加导图 XCTest 交互及中文课堂语言设置重启保留检查，结果以 `ui-feature-tests.xcresult`、`ui-feature-tests.log` 与随附测试报告为准。
+- 导图进入全屏及窗口改变时重新适配尺寸，简单课程全屏初始可放大到 120%，保留拖动、缩放和完整双语节点详情。
+- 修复识别解码器非零温度重试的并列累计概率采样，避免把近零概率的结束词优先选中；增加无模型依赖的采样回归。上游问题参考 https://github.com/argmaxinc/argmax-oss-swift/issues/539；macOS 自动化结果与 iPadOS 26 真机表现分别核验。
 - 可选 macOS 合成语音专项下载或复用多语 `base` 与 tokenizer，对系统合成的英/中文清晰、低音量样例做真实本机推理；低音量副本使用生产归一化和 PCM 代码。结果以 `ASR-SMOKE.json` / `ASR-SMOKE.txt` 为准，不预先宣称通过或等同真实教师与真机效果。
 
 发布标记为 `v0.2.0-unsigned.1`，交付 IPA 为 `LectureFlow-0.2.0-build3-unsigned.ipa`。
