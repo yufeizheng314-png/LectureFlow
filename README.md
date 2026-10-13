@@ -1,23 +1,27 @@
 # LectureFlow for iPad
 
 LectureFlow adapts the existing **WhisperAX** Xcode project into a local English
-lecture recorder with persistent transcripts, optional incremental bilingual
+lecture recorder with persistent transcripts, optional cumulative bilingual
 cloud notes, editing and export. This repository is a real fork of
 `argmaxinc/argmax-oss-swift`, based on commit
 `9f99b5cb6a907730543823ad271b82532782a899`; it is not an official Argmax app.
 
 - Open `Examples/WhisperAX/WhisperAX.xcodeproj`, scheme `WhisperAX` (product: LectureFlow).
-- iPadOS 17+, version 0.1.0 (1), bundle ID `com.yufeizheng.lectureflow`.
+- iPadOS 17+, version 0.1.1 (2), bundle ID `com.yufeizheng.lectureflow`.
 - [Windows / AltStore installation](Docs/LectureFlow/INSTALL-WINDOWS-zh.txt)
   and [required device acceptance checks](Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt).
 - [Build workflow](.github/workflows/lectureflow-ios.yml) produces an unsigned IPA.
   A successful build does not establish free AltStore signing or 90-minute device reliability.
+- [0.1.1 changes](Docs/LectureFlow/CHANGELOG-zh.md): cumulative course notes,
+  grouping of short transcript excerpts, and rebuilding notes for existing lessons.
 - `tiny.en` Core ML weights download on the device from
   [argmaxinc/whisperkit-coreml](https://huggingface.co/argmaxinc/whisperkit-coreml).
   The upstream model card declares MIT; weights are not included in the IPA.
   No model download or device performance measurement is claimed by this repository's CI.
-- Optional cloud notes send selected transcript text to the user's configured
-  HTTPS service using a personal Keychain key; its charges and privacy terms apply.
+- Optional cloud notes send the course title, bounded confirmed English excerpts,
+  prior bilingual notes, manual edits and the cumulative course summary to the user's
+  configured HTTPS service using a personal Keychain key. Audio stays on the device;
+  the service's charges and privacy terms apply.
 - [Modification notice](NOTICE-LectureFlow.txt), original [LICENSE](LICENSE)
   and complete third-party [NOTICES](NOTICES) are preserved and bundled in the app.
 

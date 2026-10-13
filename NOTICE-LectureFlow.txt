@@ -1,4 +1,4 @@
-LectureFlow 0.1.0
+LectureFlow 0.1.1
 
 This is an independently modified application based on the existing WhisperAX
 example in argmaxinc/argmax-oss-swift, not an official Argmax product.

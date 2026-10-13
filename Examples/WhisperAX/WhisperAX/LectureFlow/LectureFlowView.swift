@@ -154,7 +154,10 @@ struct LectureFlowView: View {
                     }
                 )).fixedSize()
                 Spacer()
-                if model.generatingNotes { ProgressView(); Text("正在增量更新…").font(.caption) }
+                if model.generatingNotes {
+                    ProgressView()
+                    Text(model.rebuildingSummary ? "正在梳理整堂课…" : "正在更新课程梳理…").font(.caption)
+                }
                 Button("更新 / 重试") { model.generateNotesNow() }
                     .disabled(!model.autoNotesEnabled || model.generatingNotes || model.lesson?.segments.isEmpty != false)
             }
@@ -224,10 +227,35 @@ struct LectureFlowView: View {
 
     private func notes(_ lesson: LFLesson) -> some View {
         LazyVStack(alignment: .leading, spacing: 18) {
-            Text("中英双语笔记").font(.title2.bold())
+            HStack {
+                Text("课程梳理").font(.title2.bold())
+                Spacer()
+                Button("梳理整堂课") { Task { await model.rebuildCourseNotes() } }
+                    .disabled(!model.autoNotesEnabled || model.generatingNotes || model.hasCapture || lesson.segments.isEmpty)
+            }
             if let error = lesson.notesError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
+            if let summary = lesson.courseSummary {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("AI 累计梳理 · 请核对原文").font(.caption).foregroundStyle(.secondary)
+                    Text(summary.englishNotes).textSelection(.enabled)
+                    Divider()
+                    Text(summary.chineseNotes).textSelection(.enabled)
+                    if !summary.keyTerms.isEmpty {
+                        Text(summary.keyTerms.map { "\($0.english) — \($0.chinese)" }.joined(separator: "\n"))
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    if let through = lesson.courseSummaryThrough {
+                        Text("梳理到：" + clock(through)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding().background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            } else if !lesson.notes.isEmpty {
+                Text("点击“梳理整堂课”，将已保存的英文串成课程主线。原有过程笔记和手动编辑会保留。")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("过程笔记 · \(lesson.notes.count) 组") {
             ForEach(lesson.notes) { note in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -248,8 +276,9 @@ struct LectureFlowView: View {
                 }
                 .padding().background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             }
+            }
             if lesson.notes.isEmpty {
-                Text("启用 AI 后，已确认英文将按批次生成英文要点、中文要点和术语。网络失败不会删除英文原文。")
+                Text("启用 AI 后，AI 会结合前文持续更新双语课程梳理。暂停保存后可用“梳理整堂课”重新整理已有英文。网络失败会保留原文和已有笔记。")
                     .foregroundStyle(.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)

@@ -155,7 +155,7 @@ actor LFLessonStore {
         return try save(lesson)
     }
 
-    func prepareNextBatch(for id: UUID, runToken: UUID? = nil) throws -> LFNoteBatch? {
+    func prepareNextBatch(for id: UUID, runToken: UUID? = nil, flush: Bool = true) throws -> LFNoteBatch? {
         try checkRun(runToken)
         var lesson = try loadLesson(id)
         if let index = lesson.batches.firstIndex(where: { $0.state == .queued || $0.state == .failed }) {
@@ -186,6 +186,12 @@ actor LFLessonStore {
             budget -= end - start
         }
         guard !inputs.isEmpty else { return nil }
+        if !flush {
+            let characters = inputs.reduce(0) { $0 + $1.english.count }
+            let span = (inputs.map(\.endTime).max() ?? 0) - (inputs.map(\.startTime).min() ?? 0)
+            // Give neighbouring ASR fragments time to form a meaningful passage.
+            guard inputs.count >= 3 || characters >= 350 || span >= 45 else { return nil }
+        }
         let batch = LFNoteBatch(id: UUID(), inputs: inputs, state: .running)
         lesson.batches.append(batch)
         lesson.notesState = .generating
@@ -206,6 +212,11 @@ actor LFLessonStore {
         lesson.notes.append(LFNoteBlock(id: UUID(), batchID: batchID,
             generatedEnglishNotes: notes.englishNotes, generatedChineseNotes: notes.chineseNotes,
             keyTerms: notes.keyTerms, sourceSegmentIDs: notes.sourceSegmentIDs))
+        if let summary = notes.courseSummary {
+            lesson.courseSummary = summary
+            lesson.courseSummaryThrough = max(lesson.courseSummaryThrough ?? 0,
+                                             lesson.batches[index].inputs.map(\.endTime).max() ?? 0)
+        }
         lesson.batches[index].state = .completed
         lesson.batches[index].error = nil
         lesson.notesState = .ready
@@ -213,6 +224,22 @@ actor LFLessonStore {
         let saved = try save(lesson)
         batchOwners.removeValue(forKey: batchID)
         return saved
+    }
+
+    func updateCourseSummary(_ summary: LFNotesSummary, throughTime: Double, for id: UUID,
+                             runToken: UUID? = nil) throws -> LFLesson {
+        try checkRun(runToken)
+        try summary.validate()
+        var lesson = try loadLesson(id)
+        guard throughTime.isFinite, throughTime >= 0,
+              throughTime <= (lesson.segments.map(\.endTime).max() ?? 0) + 0.001 else {
+            throw LFError.invalid("课程梳理时间超出已确认原文。")
+        }
+        lesson.courseSummary = summary
+        lesson.courseSummaryThrough = throughTime
+        lesson.notesState = .ready
+        lesson.notesError = nil
+        return try save(lesson)
     }
 
     func failBatch(lessonID: UUID, batchID: UUID, message: String, runToken: UUID? = nil) throws -> LFLesson {
@@ -246,6 +273,13 @@ actor LFLessonStore {
         let lesson = try loadLesson(id)
         let heading = format == .markdown ? "# " : ""
         var text = "\(heading)\(lesson.title)\n\n"
+        if let summary = lesson.courseSummary {
+            text += "\(format == .markdown ? "## " : "")课程梳理 / Course overview\n\n"
+            text += "\(summary.englishNotes)\n\n\(summary.chineseNotes)\n\n"
+            text += summary.keyTerms.map { "\($0.english) — \($0.chinese)" }.joined(separator: "\n")
+            text += "\n\n"
+        }
+        if !lesson.notes.isEmpty { text += "\(format == .markdown ? "## " : "")过程笔记 / Detailed notes\n\n" }
         for note in lesson.notes {
             text += "English notes\n\(note.englishNotes)\n\n中文笔记\n\(note.chineseNotes)\n\n"
             text += note.keyTerms.map { "\($0.english) — \($0.chinese)" }.joined(separator: "\n")

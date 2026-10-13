@@ -12,6 +12,27 @@ struct LFKeyTerm: Codable, Equatable, Sendable {
     let chinese: String
 }
 
+// A bounded, rolling understanding of the lecture. Detailed source notes stay
+// independently editable; this snapshot is rebuilt from confirmed evidence.
+struct LFNotesSummary: Codable, Equatable, Sendable {
+    let englishNotes: String
+    let chineseNotes: String
+    let keyTerms: [LFKeyTerm]
+
+    enum CodingKeys: String, CodingKey {
+        case englishNotes = "english_notes", chineseNotes = "chinese_notes", keyTerms = "key_terms"
+    }
+
+    func validate() throws {
+        guard !englishNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !chineseNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              englishNotes.count <= 4000, chineseNotes.count <= 4000, keyTerms.count <= 30,
+              keyTerms.allSatisfy({ !$0.english.isEmpty && !$0.chinese.isEmpty && $0.english.count <= 300 && $0.chinese.count <= 300 }) else {
+            throw LFError.invalidResponse("课程梳理缺少双语内容或超出长度限制")
+        }
+    }
+}
+
 struct LFRecordingFile: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let fileName: String
@@ -67,6 +88,9 @@ struct LFLesson: Codable, Identifiable, Sendable {
     var notes: [LFNoteBlock] = []
     var batches: [LFNoteBatch] = []
     var audioFiles: [LFRecordingFile] = []
+    // Optional additions keep existing schema-1 courses readable after upgrade.
+    var courseSummary: LFNotesSummary?
+    var courseSummaryThrough: Double?
     var timelineDuration: Double {
         max(audioFiles.map { $0.offset + $0.duration }.max() ?? 0,
             segments.map(\.endTime).max() ?? 0)
@@ -121,13 +145,16 @@ struct LFGeneratedNotes: Codable, Sendable {
     let chineseNotes: String
     let keyTerms: [LFKeyTerm]
     let sourceSegmentIDs: [String]
+    var courseSummary: LFNotesSummary? = nil
 
     enum CodingKeys: String, CodingKey {
         case englishNotes = "english_notes", chineseNotes = "chinese_notes"
         case keyTerms = "key_terms", sourceSegmentIDs = "source_segment_ids"
+        case courseSummary = "course_summary"
     }
 
     func validate(for batch: LFNoteBatch) throws {
+        try courseSummary?.validate()
         let allowed = Set(batch.inputs.map(\.segmentID))
         guard !englishNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !chineseNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

@@ -14,6 +14,7 @@ final class LectureFlowModel: ObservableObject {
     @Published private(set) var modelReady = false
     @Published private(set) var busy = false
     @Published private(set) var generatingNotes = false
+    @Published private(set) var rebuildingSummary = false
     @Published private(set) var configuration: LFCloudConfiguration?
     @Published private(set) var autoNotesEnabled = false
     @Published var errorMessage: String?
@@ -28,6 +29,7 @@ final class LectureFlowModel: ObservableObject {
     private var notesTask: Task<Void, Never>?
     private var notesToken: UUID?
     private var notesNeedAnotherPass = false
+    private var notesForceFlush = false
     private var player: AVAudioPlayer?
     private var playbackToken = UUID()
     private struct Capture {
@@ -269,11 +271,23 @@ final class LectureFlowModel: ObservableObject {
         scheduleNotes(immediate: true)
     }
 
-    private func scheduleNotes(immediate: Bool = false) {
+    func rebuildCourseNotes() async {
+        guard let id = lesson?.id, autoNotesEnabled, configuration != nil, !hasCapture, !busy,
+              lesson?.segments.isEmpty == false, !generatingNotes else { return }
+        await cancelNotes()
+        guard lesson?.id == id, !busy, !hasCapture else { return }
+        scheduleNotes(immediate: true, rebuildSummary: true)
+    }
+
+    private func scheduleNotes(immediate: Bool = false, rebuildSummary: Bool = false) {
         guard autoNotesEnabled, let current = lesson, !current.segments.isEmpty,
               let config = configuration, let notesService else { return }
         guard immediate || current.notesState != .failed else { return }
-        guard notesTask == nil else { notesNeedAnotherPass = true; return }
+        guard notesTask == nil else {
+            notesNeedAnotherPass = true
+            notesForceFlush = notesForceFlush || immediate
+            return
+        }
         notesNeedAnotherPass = false
         let token = UUID()
         notesToken = token
@@ -285,6 +299,7 @@ final class LectureFlowModel: ObservableObject {
             }
             guard !Task.isCancelled, self.notesToken == token else { return }
             self.generatingNotes = true
+            self.rebuildingSummary = rebuildSummary
             // Show each persisted batch while a longer cloud catch-up is still running.
             let refresh = Task { [weak self] in
                 while !Task.isCancelled {
@@ -301,7 +316,10 @@ final class LectureFlowModel: ObservableObject {
             defer { refresh.cancel() }
             var succeeded = false
             do {
-                let saved = try await notesService.generatePending(lessonID: current.id, configuration: config)
+                let flush = immediate || self.notesForceFlush || !self.hasCapture
+                self.notesForceFlush = false
+                let saved = try await notesService.generatePending(lessonID: current.id, configuration: config,
+                    flushPending: flush, rebuildSummary: rebuildSummary)
                 if self.lesson?.id == current.id, self.notesToken == token { self.lesson = saved }
                 if let store = self.store { self.lessons = try await store.listLessons() }
                 succeeded = true
@@ -316,9 +334,10 @@ final class LectureFlowModel: ObservableObject {
             }
             if self.notesToken == token {
                 self.generatingNotes = false
+                self.rebuildingSummary = false
                 self.notesTask = nil
                 self.notesToken = nil
-                if succeeded && self.notesNeedAnotherPass { self.scheduleNotes() }
+                if succeeded && self.notesNeedAnotherPass { self.scheduleNotes(immediate: self.notesForceFlush) }
             }
         }
     }
@@ -328,7 +347,9 @@ final class LectureFlowModel: ObservableObject {
         notesTask?.cancel()
         notesTask = nil
         generatingNotes = false
+        rebuildingSummary = false
         notesNeedAnotherPass = false
+        notesForceFlush = false
         if let id = lesson?.id, let notesService {
             do { _ = try await notesService.cancel(lessonID: id) }
             catch { errorMessage = error.localizedDescription }
