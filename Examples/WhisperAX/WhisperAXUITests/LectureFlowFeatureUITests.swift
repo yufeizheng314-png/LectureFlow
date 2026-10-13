@@ -319,9 +319,36 @@ final class LectureFlowFeatureUITests: XCTestCase {
         let export = app.buttons["lectureflow.visual.export.\(format)"]
         waitForHittable(export, "The \(format.uppercased()) export must be available")
         export.tap()
-        let share = app.descendants(matching: .any)["lectureflow.share.sheet"]
-        XCTAssertTrue(share.waitForExistence(timeout: 20), "The actual \(format.uppercased()) exporter must prepare a file and present the system sharing sheet")
+        // UIActivityViewController's own root view is not exposed by this OS.
+        // These identifiers come from the actual exported CI accessibility tree,
+        // including the remote system share content and its working close button.
+        let share = app.otherElements["ActivityListView"]
+        let close = share.buttons["header.closeButton"]
+        let saveToFiles = share.cells["Save to Files"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            share.exists && close.exists && close.isHittable && saveToFiles.exists
+        }, object: nil)
+        let shareResult = XCTWaiter.wait(for: [ready], timeout: 20)
+        if shareResult != .completed {
+            keepScreenshot(app, named: "\(format.uppercased()) system-share failure before assertion")
+            print("VISUAL_UI_DIAGNOSTIC \(format) share controls unavailable\n\(app.debugDescription)")
+        }
+        XCTAssertEqual(shareResult, .completed,
+                       "The real system sharing sheet must offer Save to Files and a usable close control")
+        let filename = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label ENDSWITH %@",
+            "lectureflow.export.filename", "." + format)).firstMatch
+        let hasFilename = filename.waitForExistence(timeout: 10)
+        if !hasFilename {
+            keepScreenshot(app, named: "\(format.uppercased()) exported-filename failure")
+            print("VISUAL_UI_DIAGNOSTIC exported filename missing\n\(app.debugDescription)")
+        }
+        XCTAssertTrue(hasFilename, "The generated file status must name the requested export format")
+        let exportedName = filename.label.replacingOccurrences(of: "已导出：", with: "")
+        XCTAssertNotNil(UUID(uuidString: String(exportedName.prefix(36))),
+                        "The generated filename must identify its actual saved course")
         keepScreenshot(app, named: screenshotName)
+        close.tap()
+        waitForDisappearance(share, "Closing system sharing must return to the existing visual gallery")
         // CI separately inspects the generated files with ImageIO/PDFKit, checking
         // dimensions/pages and extracting previews. Opening a sheet alone is not
         // reported as proof that the bytes or page content are correct.

@@ -334,6 +334,37 @@ private actor FixedVisualHTTP {
     }
 }
 
+private enum OptionalVisualReply: String { case present, missing, null, empty, invalid }
+
+private actor OptionalVisualHTTP {
+    let replies: [OptionalVisualReply]
+    var requests: [URLRequest] = []
+    init(_ replies: [OptionalVisualReply]) { precondition(!replies.isEmpty); self.replies = replies }
+    func call(_ request: URLRequest) throws -> (Data, HTTPURLResponse) {
+        let reply = replies[min(requests.count, replies.count - 1)]
+        requests.append(request)
+        let context = try requestContext(request)
+        let inputs = context["new_confirmed_segments"] as! [[String: Any]]
+        let source = inputs.last!["segmentID"] as! String
+        var object = try visualResponseObject(for: request, blocks: [])
+        var summary = object["course_summary"] as! [String: Any]
+        switch reply {
+        case .present: summary["visuals"] = [visualFixture("table", source: source)]
+        case .missing: summary.removeValue(forKey: "visuals")
+        case .null: summary["visuals"] = NSNull()
+        case .empty: summary["visuals"] = []
+        case .invalid:
+            var block = visualFixture("table", source: source)
+            var table = block["table"] as! [String: Any]
+            table["rows"] = [[visualTerm("ragged", "缺列")]]
+            block["table"] = table
+            summary["visuals"] = [block]
+        }
+        object["course_summary"] = summary
+        return try visualHTTPEnvelope(object, request: request)
+    }
+}
+
 private func visualContractChecks() async throws {
     let kinds = ["table", "flow", "causal", "bar", "line", "scatter", "formula"]
     for kind in kinds {
@@ -623,6 +654,80 @@ private func visualExportSnapshotChecks(root: URL) async throws {
     check(snapshotB.text.contains("SNAPSHOT_NEW_NOTE") && snapshotB.text.contains("SNAPSHOT_NEW_SUMMARY") && snapshotB.text.contains("NEW_SOURCE_FOR_CHART") && snapshotB.text.contains("年度产出柱图"), "Snapshot B text must include the new notes, summary, source evidence and visual")
     check(snapshotB.lesson.courseSummary == replacement && snapshotB.lesson.notes[0].englishNotes == "SNAPSHOT_NEW_NOTE" && snapshotB.lesson.segments.last?.id == "snapshot-2" && snapshotB.lesson.courseSummary?.visuals?.first?.sourceSegmentIDs == ["snapshot-2"], "Snapshot B graphics and source references must come from the same new lesson as its text")
     print("VISUAL_CHECK PASS export-snapshot text+lesson consistency across shared-path overwrite")
+}
+
+private func optionalVisualUpdateChecks(root: URL, configuration: LFCloudConfiguration) async throws {
+    let scenarios: [(String, [OptionalVisualReply], Bool, Bool)] = [
+        ("missing", [.missing], false, false), ("null", [.null], false, false),
+        ("empty", [.empty], true, false), ("invalid", [.invalid], false, true),
+        ("empty-then-missing", [.empty, .missing], true, false)
+    ]
+    for rebuilding in [false, true] {
+        for (name, replies, clears, fails) in scenarios {
+            if !rebuilding && replies.count > 1 { continue }
+            let store = try LFLessonStore(rootURL: root.appendingPathComponent("\(rebuilding)-\(name)", isDirectory: true))
+            let lesson = try await store.createLesson(title: "Optional visual compatibility")
+            let segments = (1...9).map { index in
+                LFConfirmedSegment(id: "optional-\(index)", startTime: Double(index - 1) * 10,
+                    endTime: Double(index) * 10, english: "Confirmed example \(index).")
+            }
+            _ = try await store.appendConfirmedSegments(segments, to: lesson.id)
+            let baselineHTTP = OptionalVisualHTTP([.present])
+            let baselineService = LFNotesService(store: store, transport: { try await baselineHTTP.call($0) }, keyProvider: { _ in "fixture" })
+            let baseline = try await baselineService.generatePending(lessonID: lesson.id, configuration: configuration)
+            check(baseline.courseSummary?.visuals?.first?.sourceSegmentIDs == ["optional-9"], "Compatibility fixture must end with a visual referring to the second batch")
+            let edited = try await store.updateNote(lessonID: lesson.id, noteID: baseline.notes[0].id,
+                english: "OPTIONAL_VISUAL_USER_EDIT", chinese: "保留用户编辑")
+            if !rebuilding {
+                _ = try await store.appendConfirmedSegments([LFConfirmedSegment(id: "optional-10", startTime: 90,
+                    endTime: 100, english: "A new confirmed example.")], to: lesson.id)
+            }
+            let mock = OptionalVisualHTTP(replies)
+            let service = LFNotesService(store: store, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture" })
+            if fails {
+                await mustFail { _ = try await service.generatePending(lessonID: lesson.id, configuration: configuration, rebuildSummary: rebuilding) }
+            } else {
+                _ = try await service.generatePending(lessonID: lesson.id, configuration: configuration, rebuildSummary: rebuilding)
+            }
+            let saved = try await store.loadLesson(lesson.id)
+            let requests = await mock.requests
+            check(!requests.isEmpty, "Compatibility tests must exercise the real request path")
+            check(saved.notes.first?.englishNotes == "OPTIONAL_VISUAL_USER_EDIT", "Legacy visual replies must preserve manually edited detailed notes")
+            if fails {
+                check(saved.courseSummary == edited.courseSummary && saved.notes == edited.notes,
+                      "Invalid visual replies must preserve the last complete snapshot and all detailed notes")
+            } else if clears {
+                check(saved.courseSummary?.visuals?.isEmpty == true, "An explicitly empty visual collection must clear old visuals, including before a later omitted response")
+            } else {
+                check(saved.courseSummary?.visuals == baseline.courseSummary?.visuals, "Missing and null visuals must retain the previously saved collection")
+            }
+            if rebuilding {
+                let firstContext = try requestContext(requests[0])
+                check(try summaryInContext(firstContext) == nil, "A rebuild must not send old full-course diagrams into its first source batch")
+                let firstInputs = firstContext["new_confirmed_segments"] as! [[String: Any]]
+                check(!firstInputs.contains { $0["segmentID"] as? String == "optional-9" }, "Old retained diagram must reference a source not yet covered by the first rebuild batch")
+                if !fails { check(requests.count == 2, "The compatibility rebuild must cover both source batches before committing") }
+                check(saved.notes == edited.notes && saved.batches == edited.batches && saved.segments == edited.segments,
+                      "Rebuild compatibility must not replace historical notes, batches or source text")
+            }
+            let reopened = try LFLessonStore(rootURL: store.rootURL)
+            check(try await reopened.loadLesson(lesson.id).courseSummary == saved.courseSummary,
+                  "Preserved or explicitly cleared visual state must survive reopening the store")
+            print("VISUAL_CHECK PASS optional-visual \(rebuilding ? "rebuild" : "progressive")-\(name)")
+        }
+    }
+    for reply in [OptionalVisualReply.missing, .null] {
+        let store = try LFLessonStore(rootURL: root.appendingPathComponent("first-\(reply.rawValue)", isDirectory: true))
+        let lesson = try await store.createLesson(title: "First legacy response")
+        _ = try await store.appendConfirmedSegments([LFConfirmedSegment(id: "first", startTime: 0, endTime: 10,
+            english: "A first confirmed passage.")], to: lesson.id)
+        let mock = OptionalVisualHTTP([reply])
+        let service = LFNotesService(store: store, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture" })
+        let saved = try await service.generatePending(lessonID: lesson.id, configuration: configuration)
+        check(saved.courseSummary != nil && saved.courseSummary?.visuals == nil && saved.notes.count == 1,
+              "The first legacy response must still work without inventing any visual collection")
+    }
+    print("VISUAL_CHECK PASS first legacy missing/null visual compatibility")
 }
 
 private func gatingChecks(root: URL) async throws {
@@ -1156,6 +1261,7 @@ struct LectureFlowAssertions {
         try await createEconomicsFixtures(root: root.appendingPathComponent("economics", isDirectory: true), configuration: config)
         try await visualSourceCoverageChecks(root: root.appendingPathComponent("visual-coverage", isDirectory: true), configuration: config)
         try await visualExportSnapshotChecks(root: root.appendingPathComponent("visual-export-snapshot", isDirectory: true))
+        try await optionalVisualUpdateChecks(root: root.appendingPathComponent("optional-visual-update", isDirectory: true), configuration: config)
         try checkNoStoredKey(root: root)
         print("LectureFlow assertions passed: dedup/conflict, 8k splitting, restart, token race, stale HTTP, retry, rolling summary/context, accumulation/flush, legacy migration/rebuild, bounded bilingual mind map, Chinese source, prompt contract, atomic failure preservation, edit/audio/tree export preservation, isolation, key redaction. Scripted responses do not verify live AI or ASR quality.")
         if let uiFixtureRoot {

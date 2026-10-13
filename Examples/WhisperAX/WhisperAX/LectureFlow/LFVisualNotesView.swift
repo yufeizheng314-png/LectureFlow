@@ -154,21 +154,32 @@ struct LFVisualNotesGallery: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
-        .onAppear { selectedID = initialID ?? blocks.first?.id ?? "" }
+        .onAppear { selectedID = blocks.first(where: { $0.id == initialID })?.id ?? blocks.first?.id ?? "" }
         .onChange(of: selectedID) { _, _ in zoom = 1; fitsWidth = false }
+        .onChange(of: blocks.map(\.id)) { _, ids in
+            guard !ids.contains(selectedID) else { return }
+            selectedID = ids.first ?? ""
+            zoom = 1
+            fitsWidth = false
+        }
         .onChange(of: model.exportURL) { _, url in
             if let url { document = LFVisualShareDocument(url: url) }
         }
         .sheet(item: $document, onDismiss: { model.exportURL = nil }) { LFVisualShareSheet(url: $0.url) }
         .sheet(isPresented: $showingData) {
-            if let selected {
-                NavigationStack {
-                    ScrollView { LFVisualDataView(block: selected, sourceDescription: LFVisualRenderer.sources(selected, segments: model.lesson?.segments ?? [])).padding(24) }
-                        .accessibilityIdentifier("lectureflow.visual.data.scroll")
-                        .navigationTitle("完整图文数据").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingData = false } } }
-                }.presentationDetents([.large])
-            }
+            NavigationStack {
+                Group {
+                    if let selected {
+                        ScrollView { LFVisualDataView(block: selected, sourceDescription: LFVisualRenderer.sources(selected, segments: model.lesson?.segments ?? [])).padding(24) }
+                            .accessibilityIdentifier("lectureflow.visual.data.scroll")
+                    } else {
+                        ContentUnavailableView("暂无图文笔记", systemImage: "chart.xyaxis.line",
+                                               description: Text("请更新课堂笔记后查看图表。"))
+                    }
+                }
+                .navigationTitle("完整图文数据").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingData = false } } }
+            }.presentationDetents([.large])
         }
         .alert("导出未完成", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("知道了") { model.errorMessage = nil }

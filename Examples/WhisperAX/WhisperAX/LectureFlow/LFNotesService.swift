@@ -104,6 +104,7 @@ actor LFNotesService {
         try assertCurrent(lessonID, token)
         var context = try await store.loadLesson(lessonID)
         guard !context.segments.isEmpty else { return context }
+        let originalVisuals = context.courseSummary?.visuals
         _ = try await store.setNotesState(.generating, for: lessonID, runToken: token)
         // Stage the new overview in memory. A failed rebuild keeps the previous
         // complete overview, all detailed notes, edits and audio intact.
@@ -139,7 +140,15 @@ actor LFNotesService {
                 context.courseSummaryThrough = max(context.courseSummaryThrough ?? 0, inputs.map(\.endTime).max() ?? 0)
             }
             try assertCurrent(lessonID, token)
-            guard let summary = context.courseSummary else { throw LFError.invalidResponse("缺少课程梳理") }
+            guard var summary = context.courseSummary else { throw LFError.invalidResponse("缺少课程梳理") }
+            // A legacy response omits visuals; it does not request deletion.
+            // Restore old full-course visuals only after every source has been
+            // covered, never feeding future references into an early batch.
+            // An explicit [] has already survived the rolling requests below.
+            if summary.visuals == nil, let originalVisuals {
+                try LFVisualBlock.validateBlocks(originalVisuals, allowedSourceIDs: Set(context.segments.map(\.id)))
+                summary.visuals = originalVisuals
+            }
             return try await store.updateCourseSummary(summary, throughTime: context.courseSummaryThrough ?? 0,
                                                        for: lessonID, runToken: token)
         } catch {
@@ -299,8 +308,16 @@ actor LFNotesService {
                 }
                 throw LFError.server(response.statusCode)
             }
-            return try Self.decodeResponse(data, for: batch, requireSummary: true,
-                allowedVisualSourceIDs: Self.allowedVisualSourceIDs(for: batch, in: lesson))
+            let allowedSourceIDs = Self.allowedVisualSourceIDs(for: batch, in: lesson)
+            var output = try Self.decodeResponse(data, for: batch, requireSummary: true,
+                allowedVisualSourceIDs: allowedSourceIDs)
+            if output.courseSummary?.visuals == nil, let previousVisuals = lesson.courseSummary?.visuals {
+                // Preserve the last covered visual snapshot for legacy/missing
+                // fields; an explicitly returned empty array still clears it.
+                try LFVisualBlock.validateBlocks(previousVisuals, allowedSourceIDs: allowedSourceIDs)
+                output.courseSummary?.visuals = previousVisuals
+            }
+            return output
         }
         throw LFError.network
     }
