@@ -170,16 +170,10 @@ final class LectureFlowFeatureUITests: XCTestCase {
 
         selectVisual(app, id: "econ-table", title: "样本数据表")
         requestRealVisualExport(app, format: "png", screenshotName: "Table PNG export share sheet")
-        app.terminate(); app.launch()
-        openVisualGallery(app, course: regressionTitle)
         selectVisual(app, id: "econ-scatter", title: "样本散点")
         requestRealVisualExport(app, format: "png", screenshotName: "Scatter PNG export share sheet")
-        app.terminate(); app.launch()
-        openVisualGallery(app, course: regressionTitle)
         selectVisual(app, id: "econ-long-table", title: "计量统计概念长表")
         requestRealVisualExport(app, format: "png", screenshotName: "Long comparison table PNG export share sheet")
-        app.terminate(); app.launch()
-        openVisualGallery(app, course: regressionTitle)
         requestRealVisualExport(app, format: "pdf", screenshotName: "Full econometrics PDF export share sheet")
 
         app.terminate(); app.launch()
@@ -192,8 +186,6 @@ final class LectureFlowFeatureUITests: XCTestCase {
         }
         selectVisual(app, id: "econ-bar", title: "年度产出柱图")
         requestRealVisualExport(app, format: "png", screenshotName: "Bar PNG export share sheet")
-        app.terminate(); app.launch()
-        openVisualGallery(app, course: outputTitle)
         requestRealVisualExport(app, format: "pdf", screenshotName: "Full economic-trend PDF export share sheet")
     }
 

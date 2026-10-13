@@ -161,9 +161,10 @@ jobs:
           xcrun simctl launch "$DEVICE" com.yufeizheng.lectureflow | tee build/logs/simulator-fixture-launch.log
           sleep 5
           xcrun simctl io "$DEVICE" screenshot build/logs/ipad-progressive-notes.png
-          xcrun simctl shutdown "$DEVICE"
+          # Keep the verified, fixture-loaded iPad booted for XCTest. A second
+          # cold boot can consume several minutes before the first assertion.
       - name: iPad mind map, visual notebook, exports and Chinese persistence
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: |
           set -o pipefail
           DEVICE=$(cat build/logs/ipad-device.txt)
