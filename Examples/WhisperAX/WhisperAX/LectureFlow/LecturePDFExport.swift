@@ -12,7 +12,12 @@ enum LecturePDFExport {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 4
         style.paragraphSpacing = 7
-        let document = NSAttributedString(string: text, attributes: [
+        // CoreText can consume trailing line breaks on a separate, visually
+        // empty page. Preserve indentation and internal spacing, trimming only
+        // the end of the document before calculating visible string ranges.
+        var content = text
+        while let last = content.last, last.isWhitespace { content.removeLast() }
+        let document = NSAttributedString(string: content, attributes: [
             .font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.black,
             .paragraphStyle: style,
         ])
@@ -29,6 +34,10 @@ enum LecturePDFExport {
                 pageNumber += 1
                 let graphics = context.cgContext
                 graphics.saveGState()
+                // UIKit's footer drawing changes the text matrix, which is not
+                // restored with the graphics state. Reset it on every page so
+                // all CoreText pages have the same upright glyph orientation.
+                graphics.textMatrix = .identity
                 graphics.translateBy(x: 0, y: page.height)
                 graphics.scaleBy(x: 1, y: -1)
                 let path = CGPath(rect: body, transform: nil)
