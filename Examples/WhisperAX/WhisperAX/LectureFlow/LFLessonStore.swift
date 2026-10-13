@@ -303,6 +303,7 @@ actor LFLessonStore {
                 appendNodes(map, depth: 0)
                 text += "\n"
             }
+            text += LFVisualTextExport.render(summary.visuals ?? [], format: format)
         }
         if !lesson.notes.isEmpty { text += "\(format == .markdown ? "## " : "")过程笔记 / Detailed notes\n\n" }
         for note in lesson.notes {

@@ -31,6 +31,17 @@ CASES = {
     },
 }
 
+ECONOMETRICS_CASES = {
+    "en": {
+        "text": "In linear regression, the coefficient measures the association between two variables. The ordinary least squares method minimizes the sum of squared residuals. A standard error describes uncertainty in an estimate. Correlation alone does not establish causality.",
+        "keywords": {"regression": ["regression"], "coefficient": ["coefficient"], "residuals": ["residuals"], "causality": ["causality"]},
+    },
+    "zh": {
+        "text": "在线性回归中，系数描述两个变量之间的关系。最小二乘法使残差平方和最小。标准误反映估计值的不确定性。相关关系本身不能证明因果关系，解释回归系数时必须检查模型假设。",
+        "keywords": {"回归": ["回归", "回歸"], "系数": ["系数", "係數", "系數"], "残差": ["残差", "殘差"], "因果": ["因果"]},
+    },
+}
+
 
 def sha256(path):
     with path.open("rb") as file:
@@ -167,7 +178,7 @@ def run(args, report, repo, output):
     if model_path and (not valid_model_folder(model_path) or "base.en" in model_path.name or "base" not in model_path.name):
         raise RuntimeError("Blocked: --model-path must contain complete multilingual base Core ML models, not metadata or base.en")
     for language in report["requested_languages"]:
-        fixture = CASES[language]
+        fixture = (ECONOMETRICS_CASES if args.fixture_set == "econometrics" else CASES)[language]
         voice = selected[language]
         if voice is None:
             continue
@@ -249,6 +260,7 @@ def main():
     repo = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=repo / "build/asr-smoke")
+    parser.add_argument("--fixture-set", choices=("water_cycle", "econometrics"), default="water_cycle")
     parser.add_argument("--cache", type=Path, default=repo / ".build/lectureflow-asr-cache")
     parser.add_argument("--cli", type=Path, help="An already-built repository whisperkit-cli executable")
     parser.add_argument("--model-path", type=Path, help="An existing multilingual openai_whisper-base folder")
@@ -272,6 +284,7 @@ def main():
               "model": "multilingual openai_whisper-base", "minimum_keyword_hits": args.min_keyword_hits, "cases": [],
               "scope": "Real repository CLI inference on local system-synthesized speech. Low copies use production normalization and PCM store in bounded file windows. No microphone, teacher recording, iPad ownership/latency, cloud AI quality or device acceptance is tested."}
     report["requested_languages"] = [args.language_only] if args.language_only else list(CASES)
+    report["fixture_set"] = args.fixture_set
     report["expected_case_count"] = len(report["requested_languages"]) * 2
     report["coverage"] = "diagnostic_language_subset" if args.language_only else "full_english_chinese_clear_low"
     report["compute_units"] = {"mel": args.compute_units, "audio_encoder": args.compute_units, "text_decoder": args.compute_units}

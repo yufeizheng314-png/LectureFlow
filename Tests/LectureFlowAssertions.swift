@@ -194,6 +194,376 @@ private actor HeldHTTP {
     }
 }
 
+// These deliberately small economics/statistics examples are scripted fixtures,
+// not measured student results or evidence of a cloud model's reasoning quality.
+private func visualTerm(_ english: String, _ chinese: String) -> [String: String] {
+    ["english": english, "chinese": chinese]
+}
+
+private func visualFixture(_ kind: String, id: String? = nil, source: String = "visual-regression-1") -> [String: Any] {
+    let term = visualTerm
+    let titles = ["table": ("Observed sample", "样本数据表"), "flow": ("OLS workflow", "估计步骤"),
+                  "causal": ("Confounding hypothesis", "混杂路径"), "scatter": ("Hours and score", "样本散点"),
+                  "formula": ("OLS slope", "斜率公式"), "bar": ("Annual output", "年度产出柱图"),
+                  "line": ("Output trend", "产出趋势折线")]
+    let title = titles[kind]!
+    var value: [String: Any] = ["id": id ?? "econ-\(kind)", "kind": kind, "title": term(title.0, title.1),
+        "caption": term("Scripted classroom example for automated tests; not a live AI result.", "自动化课堂示例，使用预设数据，不是真实云 AI 结果。"),
+        "source_segment_ids": [source]]
+    switch kind {
+    case "table":
+        value["table"] = ["columns": [term("Hours (h)", "时长（小时）"), term("Score (points)", "得分（分）")],
+                           "rows": [[term("1", "1"), term("2", "2")], [term("2", "2"), term("3", "3")], [term("3", "3"), term("5", "5")]]]
+    case "flow":
+        value["diagram"] = ["nodes": [["id": "observe", "label": term("Observe sample", "观察样本")],
+                                        ["id": "estimate", "label": term("Minimize squared residuals", "最小化残差平方和")],
+                                        ["id": "check", "label": term("Check assumptions", "核对假设")]],
+                              "edges": [["from": "observe", "to": "estimate"], ["from": "estimate", "to": "check"]]]
+    case "causal":
+        value["caption"] = term("Classroom causal hypothesis only; these arrows are not effects estimated from the three-point sample.", "课堂因果假设图；箭头不是从三点样本估计出的因果效应。")
+        value["diagram"] = ["nodes": [["id": "ability", "label": term("Ability", "能力")],
+                                        ["id": "education", "label": term("Education", "教育")],
+                                        ["id": "wage", "label": term("Wage", "工资")]],
+                              "edges": [["from": "ability", "to": "education", "label": term("Hypothesis", "假设")],
+                                        ["from": "ability", "to": "wage", "label": term("Hypothesis", "假设")],
+                                        ["from": "education", "to": "wage", "label": term("Target relationship", "研究关系")]]]
+    case "scatter", "bar", "line":
+        let scatter = kind == "scatter"
+        let xs = scatter ? [1.0, 2.0, 3.0] : [2023.0, 2024.0, 2025.0]
+        let ys = scatter ? [2.0, 3.0, 5.0] : [100.0, 110.0, 121.0]
+        let points: [[String: Any]] = zip(xs, ys).map { ["x": $0.0, "y": $0.1, "label": term(String(Int($0.0)), String(Int($0.0)))] }
+        value["chart"] = ["x_label": term(scatter ? "Hours (h)" : "Year", scatter ? "时长（小时）" : "年份"),
+                           "y_label": term(scatter ? "Score (points)" : "Output (billion yuan)", scatter ? "得分（分）" : "产出（亿元）"),
+                           "series": [["id": "observations", "label": term("Given sample", "课堂给定样本"), "points": points]]]
+    case "formula":
+        value["formula"] = ["expression": "β̂₁ = Σᵢ(xᵢ − x̄)(yᵢ − ȳ) / Σᵢ(xᵢ − x̄)² = 3 / 2 = 1.5",
+            "symbols": [["symbol": "xᵢ", "meaning": term("Study hours (h)", "学习时长（小时）")],
+                        ["symbol": "yᵢ", "meaning": term("Score (points)", "得分（分）")],
+                        ["symbol": "β̂₁", "meaning": term("Estimated slope (points/h)", "斜率估计值（分/小时）")]],
+            "steps": [term("For the supplied three observations, x̄ = 2 and ȳ = 10/3.", "给定三个观测，x 均值为 2，y 均值为 10/3。"),
+                      term("Cross-deviation sum = 3; squared x-deviation sum = 2.", "离差乘积和为 3；x 离差平方和为 2。"),
+                      term("Slope = 1.5 points/h; intercept = 1/3 points. Association alone does not prove causation.", "斜率为 1.5 分/小时，截距为 1/3 分。相关关系本身不能证明因果。")]]
+    default: preconditionFailure("Unknown test visual kind")
+    }
+    return value
+}
+
+private func visualBlocks(_ objects: [[String: Any]]) throws -> [LFVisualBlock] {
+    try JSONDecoder().decode([LFVisualBlock].self, from: JSONSerialization.data(withJSONObject: objects))
+}
+
+private func visualResponseObject(for request: URLRequest, blocks: [[String: Any]]) throws -> [String: Any] {
+    let context = try requestContext(request)
+    let inputs = context["new_confirmed_segments"] as! [[String: Any]]
+    var notes = LFGeneratedNotes(englishNotes: "Scripted visual fixture: connected classroom explanation.", chineseNotes: "自动化图文夹具：连接此前与本批课堂内容。", keyTerms: [], sourceSegmentIDs: inputs.map { $0["segmentID"] as! String })
+    notes.courseSummary = LFNotesSummary(englishNotes: "Automated economics/statistics fixture. Observations, estimation and assumptions belong to one cumulative explanation; no claim of real cloud quality.", chineseNotes: "自动化计量统计课程：在累计梳理中连接观察、估计和假设；不代表真实云生成质量。", keyTerms: [], mindMap: [LFConceptNode(id: "econometrics", english: "Evidence and estimation", chinese: "证据与估计", children: [])])
+    var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(notes)) as! [String: Any]
+    var summary = object["course_summary"] as! [String: Any]
+    summary["visuals"] = blocks
+    object["course_summary"] = summary
+    return object
+}
+
+private func visualHTTPEnvelope(_ object: [String: Any], request: URLRequest) throws -> (Data, HTTPURLResponse) {
+    let data = try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": "stop", "message": ["content": try contextText(object)]]]])
+    return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+}
+
+private actor EconomicsHTTP {
+    var requests: [URLRequest] = []
+    func call(_ request: URLRequest) throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        let context = try requestContext(request)
+        check(context["source_language"] as? String == "zh", "Economics fixture must use actual Chinese source mode")
+        try checkPromptContract(request)
+        let previous = try summaryInContext(context)
+        let inputs = context["new_confirmed_segments"] as! [[String: Any]]
+        let ids = Set(inputs.map { $0["segmentID"] as! String })
+        var blocks = try previous?.visuals.map { try JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) as! [[String: Any]] } ?? []
+        if ids.contains("visual-regression-1") {
+            blocks += ["table", "flow", "causal"].map { visualFixture($0) }
+        }
+        if ids.contains("visual-regression-2") {
+            blocks += ["scatter", "formula"].map { visualFixture($0, source: "visual-regression-2") }
+        }
+        if ids.contains("visual-output-1") {
+            blocks += ["bar", "line"].map { visualFixture($0, source: "visual-output-1") }
+        }
+        return try visualHTTPEnvelope(visualResponseObject(for: request, blocks: blocks), request: request)
+    }
+}
+
+private actor FixedVisualHTTP {
+    let blocks: Data
+    var requests: [URLRequest] = []
+    init(blocks: Data) { self.blocks = blocks }
+    func call(_ request: URLRequest) throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        return try visualHTTPEnvelope(visualResponseObject(for: request, blocks: JSONSerialization.jsonObject(with: blocks) as! [[String: Any]]), request: request)
+    }
+}
+
+private func visualContractChecks() async throws {
+    let kinds = ["table", "flow", "causal", "bar", "line", "scatter", "formula"]
+    for kind in kinds {
+        let original = try visualBlocks([visualFixture(kind)])
+        try LFVisualBlock.validateBlocks(original, allowedSourceIDs: ["visual-regression-1"])
+        let roundTrip = try JSONDecoder().decode([LFVisualBlock].self, from: JSONEncoder().encode(original))
+        check(roundTrip == original, "Every visual kind must preserve all bilingual data and numeric values through Codable")
+        let markdown = LFVisualTextExport.render(original, format: .markdown)
+        let plain = LFVisualTextExport.render(original, format: .text)
+        for output in [markdown, plain] {
+            check(output.contains(original[0].title.english) && output.contains(original[0].title.chinese) && output.contains("visual-regression-1"), "Every visual kind needs bilingual titles and source references in both portable formats")
+        }
+        if ["bar", "line", "scatter"].contains(kind) {
+            check(markdown.contains(kind == "scatter" ? "3.0 | 5.0" : "2025.0 | 121.0") && plain.contains(kind == "scatter" ? "3.0\t5.0" : "2025.0\t121.0"), "Charts must export actual source x/y values instead of only a picture")
+        }
+        if kind == "flow" || kind == "causal" {
+            check(markdown.contains("```mermaid\nflowchart TD") && markdown.contains(" -->") && plain.contains("→"), "Diagram export must contain relationships in both machine-renderable and plain-readable forms")
+        }
+        if kind == "formula" { check(markdown.contains("= 3 / 2 = 1.5") && plain.contains("1.5 分/小时") && plain.contains("β̂₁"), "Formula exports must preserve expression, symbols, units and derivation") }
+        print("VISUAL_CHECK PASS kind=\(kind) roundtrip+bilingual+source+markdown+text")
+    }
+
+    func mustReject(_ object: [String: Any], reason: String) async {
+        await mustFail { try LFVisualBlock.validateBlocks(visualBlocks([object]), allowedSourceIDs: ["visual-regression-1"]) }
+        print("VISUAL_CHECK PASS reject=\(reason)")
+    }
+    var bad = visualFixture("table")
+    bad["source_segment_ids"] = ["other-course"]
+    await mustReject(bad, reason: "foreign-source")
+    bad["source_segment_ids"] = ["visual-regression-1", "visual-regression-1"]
+    await mustReject(bad, reason: "duplicate-source")
+    bad["source_segment_ids"] = []
+    await mustReject(bad, reason: "empty-source")
+    bad = visualFixture("table"); bad["chart"] = visualFixture("line")["chart"]
+    await mustReject(bad, reason: "mismatched-multiple-payloads")
+    bad = visualFixture("table"); bad["table"] = NSNull()
+    await mustReject(bad, reason: "missing-required-payload")
+    bad = visualFixture("table"); bad["kind"] = "unrecognized-future-kind"
+    await mustReject(bad, reason: "unknown-kind")
+    bad = visualFixture("table"); bad["title"] = visualTerm(" ", "表格")
+    await mustReject(bad, reason: "blank-title")
+
+    let six = try visualBlocks((0..<6).map { visualFixture("table", id: "limit-\($0)") })
+    try LFVisualBlock.validateBlocks(six)
+    await mustFail { try LFVisualBlock.validateBlocks(six + [six[0]]) }
+    await mustFail { try LFVisualBlock.validateBlocks([six[0], six[0]]) }
+    var maximumTable = visualFixture("table")
+    maximumTable["table"] = ["columns": (1...6).map { visualTerm("C\($0)", "列\($0)") }, "rows": (1...12).map { row in (1...6).map { _ in visualTerm("\(row)", "\(row)") } }]
+    try LFVisualBlock.validateBlocks(visualBlocks([maximumTable]))
+    for (columns, rows, reason) in [(1, 1, "one-column"), (7, 1, "seven-columns"), (2, 0, "empty-table"), (2, 13, "thirteen-rows")] {
+        bad = visualFixture("table")
+        bad["table"] = ["columns": (0..<columns).map { visualTerm("C\($0)", "列\($0)") }, "rows": (0..<rows).map { _ in (0..<columns).map { _ in visualTerm("Cell", "单元格") } }]
+        await mustReject(bad, reason: reason)
+    }
+    bad = visualFixture("table")
+    bad["table"] = ["columns": [visualTerm("X", "横"), visualTerm("Y", "纵")], "rows": [[visualTerm("1", "1")]]]
+    await mustReject(bad, reason: "ragged-table")
+
+    for kind in ["flow", "causal"] {
+        var maxDiagram = visualFixture(kind)
+        let nodes = (0..<10).map { ["id": "n\($0)", "label": visualTerm("Node \($0)", "节点 \($0)")] as [String: Any] }
+        let edges = (0..<9).map { ["from": "n\($0)", "to": "n\($0 + 1)"] } + (2..<7).map { ["from": "n0", "to": "n\($0)"] }
+        maxDiagram["diagram"] = ["nodes": nodes, "edges": edges]
+        try LFVisualBlock.validateBlocks(visualBlocks([maxDiagram]))
+        for (edgeList, reason) in [([["from": "observe", "to": "missing"]], "dangling-edge"), ([["from": "observe", "to": "observe"]], "self-edge"), ([["from": "observe", "to": "estimate"], ["from": "observe", "to": "estimate"]], "duplicate-edge")] {
+            bad = visualFixture("flow"); bad["kind"] = kind
+            var diagram = bad["diagram"] as! [String: Any]; diagram["edges"] = edgeList; bad["diagram"] = diagram
+            await mustReject(bad, reason: "\(kind)-\(reason)")
+        }
+        bad = maxDiagram; var diagram = bad["diagram"] as! [String: Any]
+        diagram["nodes"] = nodes + [["id": "isolated", "label": visualTerm("Extra", "多余")]]
+        bad["diagram"] = diagram; await mustReject(bad, reason: "\(kind)-eleven-nodes")
+    }
+
+    for kind in ["bar", "line", "scatter"] {
+        var maxChart = visualFixture(kind)
+        let points = (0..<24).map { ["x": Double($0), "y": 1e12 - Double($0)] }
+        let series = (0..<3).map { ["id": "s\($0)", "label": visualTerm("Series \($0)", "系列 \($0)"), "points": points] as [String: Any] }
+        maxChart["chart"] = ["x_label": visualTerm("Time (h)", "时间（小时）"), "y_label": visualTerm("Value (yuan)", "值（元）"), "series": series]
+        try LFVisualBlock.validateBlocks(visualBlocks([maxChart]))
+        let invalidCoordinates: [(Any, Any, String)] = [("NaN", 1, "nonnumeric-x"), (1, "Infinity", "nonnumeric-y"), (1, 1e13, "out-of-range-y"), (NSNull(), 1, "null-x")]
+        for (x, y, reason) in invalidCoordinates {
+            bad = visualFixture(kind); var chart = bad["chart"] as! [String: Any]
+            chart["series"] = [["id": "bad", "label": visualTerm("Series", "系列"), "points": [["x": x, "y": y], ["x": 2, "y": 2]]]]; bad["chart"] = chart
+            await mustReject(bad, reason: "\(kind)-\(reason)")
+        }
+        bad = maxChart; var chart = bad["chart"] as! [String: Any]
+        chart["series"] = series + [["id": "s4", "label": visualTerm("Extra", "多余"), "points": points]]; bad["chart"] = chart
+        await mustReject(bad, reason: "\(kind)-four-series")
+        bad = maxChart; chart["series"] = [["id": "s", "label": visualTerm("Series", "系列"), "points": points + [["x": 24.0, "y": 1.0]]]]; bad["chart"] = chart
+        await mustReject(bad, reason: "\(kind)-twenty-five-points")
+        if kind != "bar" {
+            bad = visualFixture(kind); chart = bad["chart"] as! [String: Any]
+            chart["series"] = [["id": "short", "label": visualTerm("Series", "系列"), "points": [["x": 1, "y": 1]]]]; bad["chart"] = chart
+            await mustReject(bad, reason: "\(kind)-one-point")
+        }
+    }
+    bad = visualFixture("line"); var chart = bad["chart"] as! [String: Any]
+    chart["series"] = [["id": "unsorted", "label": visualTerm("Series", "系列"), "points": [["x": 2, "y": 1], ["x": 1, "y": 2]]]]; bad["chart"] = chart
+    await mustReject(bad, reason: "line-unsorted-x")
+    bad = visualFixture("formula"); var formula = bad["formula"] as! [String: Any]
+    formula["expression"] = String(repeating: "x", count: 1001); bad["formula"] = formula
+    await mustReject(bad, reason: "formula-expression-limit")
+    formula["expression"] = "x"; formula["symbols"] = [["symbol": "x", "meaning": visualTerm("First", "一")], ["symbol": "x", "meaning": visualTerm("Second", "二")]]; bad["formula"] = formula
+    await mustReject(bad, reason: "formula-duplicate-symbols")
+    formula["symbols"] = []; formula["steps"] = (0..<9).map { _ in visualTerm("Step", "步骤") }; bad["formula"] = formula
+    await mustReject(bad, reason: "formula-nine-steps")
+    var maximumFormula = visualFixture("formula")
+    maximumFormula["formula"] = ["expression": String(repeating: "x", count: 1000),
+        "symbols": (0..<16).map { ["symbol": "s\($0)", "meaning": visualTerm("Meaning", "含义")] as [String: Any] },
+        "steps": (0..<8).map { visualTerm("Step \($0)", "步骤 \($0)") }]
+    try LFVisualBlock.validateBlocks(visualBlocks([maximumFormula]))
+    bad = maximumFormula; formula = bad["formula"] as! [String: Any]
+    formula["symbols"] = (0..<17).map { ["symbol": "s\($0)", "meaning": visualTerm("Meaning", "含义")] as [String: Any] }; bad["formula"] = formula
+    await mustReject(bad, reason: "formula-seventeen-symbols")
+    var largeTable = maximumTable
+    var largePayload = largeTable["table"] as! [String: Any]
+    largePayload["rows"] = (0..<12).map { _ in (0..<6).map { _ in visualTerm(String(repeating: "e", count: 240), String(repeating: "中", count: 240)) } }
+    largeTable["table"] = largePayload
+    await mustReject(largeTable, reason: "aggregate-text-budget")
+    print("VISUAL_CHECK PASS collection/table/diagram/chart/formula limits")
+
+    var escapedTable = visualFixture("table")
+    escapedTable["table"] = ["columns": [visualTerm("A|B", "甲|乙"), visualTerm("C", "丙")], "rows": [[visualTerm("<tag>\n`code`", "一\n二"), visualTerm("quoted \"value\"", "引号")]]]
+    var escapedDiagram = visualFixture("flow")
+    escapedDiagram["diagram"] = ["nodes": [["id": "hostile --> syntax", "label": visualTerm("A\"|\n```mermaid", "甲")], ["id": "b", "label": visualTerm("B", "乙")]], "edges": [["from": "hostile --> syntax", "to": "b"]]]
+    var escapedFormula = visualFixture("formula")
+    escapedFormula["formula"] = ["expression": "a = ``` + b", "symbols": [], "steps": []]
+    let portable = LFVisualTextExport.render(try visualBlocks([escapedTable, escapedDiagram, escapedFormula]), format: .markdown)
+    check(portable.contains("A&#124;B") && portable.contains("&lt;tag&gt;<br>&#96;code&#96;") && portable.contains("#quot;") && portable.contains("#96;#96;#96;mermaid") && portable.contains("````text\na = ``` + b\n````") && !portable.contains("hostile --> syntax") && !portable.contains("A\"|\n```mermaid") && !portable.contains("<tag>"), "Portable formats must escape table pipes/newlines/ticks, diagram labels and generated IDs, and fence formulas without truncation")
+    print("VISUAL_CHECK PASS portable-format escaping")
+}
+
+private func visualResponseContractChecks() async throws {
+    let batch = LFNoteBatch(id: UUID(), inputs: [LFNoteInput(segmentID: "visual-regression-1", startTime: 0, endTime: 10, characterStart: 0, characterEnd: 4, english: "Data")], state: .running)
+    let request = URLRequest(url: URL(string: "https://example.invalid/chat/completions")!)
+    func object(_ visuals: Any?) throws -> [String: Any] {
+        var notes = LFGeneratedNotes(englishNotes: "Scripted economics example.", chineseNotes: "预设计量示例。", keyTerms: [], sourceSegmentIDs: ["visual-regression-1"])
+        notes.courseSummary = LFNotesSummary(englishNotes: "Course overview.", chineseNotes: "课程梳理。", keyTerms: [], mindMap: fixtureMindMap())
+        var value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(notes)) as! [String: Any]
+        if let visuals {
+            var summary = value["course_summary"] as! [String: Any]
+            summary["visuals"] = visuals; value["course_summary"] = summary
+        }
+        return value
+    }
+    func decode(_ value: [String: Any]) throws -> LFGeneratedNotes {
+        try LFNotesService.decodeResponse(visualHTTPEnvelope(value, request: request).0, for: batch, requireSummary: true, allowedVisualSourceIDs: ["visual-regression-1"])
+    }
+    let legacy = try decode(object(nil))
+    check(legacy.courseSummary?.visuals == nil, "Existing 0.2 summaries without visuals must stay readable without fabricating diagrams")
+    check(try decode(object(NSNull())).courseSummary?.visuals == nil, "Explicit null must retain optional legacy summary compatibility")
+    check(try decode(object([])).courseSummary?.visuals?.isEmpty == true, "A valid source without useful chart material may have no visual blocks")
+    for kind in ["table", "flow", "causal", "bar", "line", "scatter", "formula"] {
+        let value = visualFixture(kind)
+        check(try decode(object([value])).courseSummary?.visuals?.first?.kind.rawValue == kind, "Strict service response validation must accept each supported typed payload")
+        var extra = value; extra["image_url"] = "https://example.invalid/untrusted.svg"
+        await mustFail { _ = try decode(object([extra])) }
+        var extraNull = value
+        extraNull[kind == "table" ? "chart" : "table"] = NSNull()
+        await mustFail { _ = try decode(object([extraNull])) }
+        var unknownNested = value
+        let payload = kind == "table" ? "table" : (kind == "flow" || kind == "causal" ? "diagram" : (kind == "formula" ? "formula" : "chart"))
+        var nested = unknownNested[payload] as! [String: Any]; nested["unexpected"] = "ignored content must be rejected"
+        unknownNested[payload] = nested
+        await mustFail { _ = try decode(object([unknownNested])) }
+    }
+    let invalidVisualValues: [Any] = ["not an array", ["kind": "table"]]
+    for invalidVisuals in invalidVisualValues {
+        await mustFail { _ = try decode(object(invalidVisuals)) }
+    }
+    var invalidNumber = visualFixture("scatter")
+    var chart = invalidNumber["chart"] as! [String: Any]
+    chart["series"] = [["id": "bad", "label": visualTerm("Series", "系列"), "points": [["x": "NaN", "y": 1], ["x": 2, "y": 2]]]]
+    invalidNumber["chart"] = chart
+    await mustFail { _ = try decode(object([invalidNumber])) }
+    let nonfinite = LFVisualBlock(id: "infinite", kind: .scatter, title: LFKeyTerm(english: "Data", chinese: "数据"), caption: LFKeyTerm(english: "Fixture", chinese: "夹具"), sourceSegmentIDs: ["visual-regression-1"], chart: LFVisualChart(xLabel: LFKeyTerm(english: "X", chinese: "横轴"), yLabel: LFKeyTerm(english: "Y", chinese: "纵轴"), series: [LFVisualSeries(id: "s", label: LFKeyTerm(english: "Series", chinese: "系列"), points: [LFVisualPoint(x: .nan, y: 1), LFVisualPoint(x: 2, y: .infinity)])]))
+    await mustFail { try LFVisualBlock.validateBlocks([nonfinite]) }
+    print("VISUAL_CHECK PASS strict-service seven-kinds/legacy/empty/unknown-keys/nonnumeric/nonfinite")
+}
+
+private func createEconomicsFixtures(root: URL, configuration: LFCloudConfiguration) async throws {
+    let store = try LFLessonStore(rootURL: root)
+    let regression = try await store.createLesson(title: "自动化测试 · 计量与统计图文（预设数据）")
+    _ = try await store.setLectureLanguage(.chinese, for: regression.id)
+    let first = LFConfirmedSegment(id: "visual-regression-1", startTime: 0, endTime: 45, english: "自动化教学示例，不是真实课堂结果。三名虚拟观测的学习时长（小时）与得分（分）分别为 (1,2)、(2,3)、(3,5)。估计顺序是观察样本、最小化残差平方和、核对假设。另一个课堂因果假设中，能力影响教育和工资，教育影响工资；这不是上述三点样本的因果估计。")
+    _ = try await store.appendConfirmedSegments([first], to: regression.id)
+    let mock = EconomicsHTTP()
+    let service = LFNotesService(store: store, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture-key-never-on-disk" })
+    let opening = try await service.generatePending(lessonID: regression.id, configuration: configuration)
+    check(opening.courseSummary?.visuals?.count == 3, "First economics passage must store the sample, workflow and hypothetical causal diagram together")
+    _ = try await store.updateNote(lessonID: regression.id, noteID: opening.notes[0].id, english: "USER_EDIT: association is not causation.", chinese: "用户编辑：相关不等于因果。")
+    let second = LFConfirmedSegment(id: "visual-regression-2", startTime: 45, endTime: 90, english: "继续使用刚才同一组观测：(1小时,2分)、(2小时,3分)、(3小时,5分)。画散点图。x 均值是2，y均值是10/3；离差乘积和为3，x离差平方和为2。所以 OLS 斜率是 3/2=1.5 分/小时，截距是1/3分。相关关系本身不能证明因果。")
+    _ = try await store.appendConfirmedSegments([second], to: regression.id)
+    let complete = try await service.generatePending(lessonID: regression.id, configuration: configuration)
+    let requests = await mock.requests
+    check(requests.count == 2, "The regression fixture must use two real service rounds")
+    let previousSummary = try summaryInContext(requestContext(requests[1]))
+    check(previousSummary == opening.courseSummary, "Second visual generation must receive the exact first cumulative chart/table summary")
+    check(complete.courseSummary?.visuals?.count == 5 && complete.notes[0].englishNotes.contains("USER_EDIT") && complete.courseSummaryThrough == 90, "A later formula and scatter must join the retained sample/table/relationships without losing edits")
+    let reopened = try LFLessonStore(rootURL: root)
+    check(try await reopened.loadLesson(regression.id).courseSummary == complete.courseSummary, "All structured visuals must survive actual disk reload")
+    let rebuildMock = EconomicsHTTP()
+    let rebuild = LFNotesService(store: reopened, transport: { try await rebuildMock.call($0) }, keyProvider: { _ in "fixture" })
+    let rebuilt = try await rebuild.generatePending(lessonID: regression.id, configuration: configuration, rebuildSummary: true)
+    check(rebuilt.courseSummary == complete.courseSummary && rebuilt.notes == complete.notes && rebuilt.segments == complete.segments && rebuilt.batches == complete.batches, "Visual rebuild must be atomic and preserve edited notes, historical batches and source transcripts")
+    for format in [LFExportFormat.markdown, .text] {
+        let output = try String(contentsOf: await reopened.exportLesson(regression.id, format: format), encoding: .utf8)
+        check(output.contains("样本数据表") && output.contains("混杂路径") && output.contains("β̂₁") && output.contains("USER_EDIT") && output.contains("visual-regression-2"), "Actual store exports must include all visual types, source IDs and manual corrections")
+    }
+    print("VISUAL_CHECK PASS real-service two-round cumulative/rebuild/disk/export/edit-preservation")
+
+    // A damaged service response must never replace the last useful snapshot.
+    _ = try await reopened.appendConfirmedSegments([LFConfirmedSegment(id: "visual-regression-3", startTime: 90, endTime: 100, english: "继续检查残差。")], to: regression.id)
+    var invalid = visualFixture("table", source: "visual-regression-3")
+    var invalidTable = invalid["table"] as! [String: Any]; invalidTable["rows"] = [[visualTerm("ragged", "缺列")]]; invalid["table"] = invalidTable
+    let failingMock = FixedVisualHTTP(blocks: try JSONSerialization.data(withJSONObject: [invalid]))
+    let failingService = LFNotesService(store: reopened, transport: { try await failingMock.call($0) }, keyProvider: { _ in "fixture" })
+    await mustFail { _ = try await failingService.generatePending(lessonID: regression.id, configuration: configuration) }
+    let retained = try await reopened.loadLesson(regression.id)
+    check(retained.courseSummary == rebuilt.courseSummary && retained.notes == rebuilt.notes && retained.courseSummaryThrough == 90, "Malformed rich content must retain the complete previous cumulative snapshot and coverage")
+    _ = try await reopened.cancelBatches(for: regression.id)
+    let recoveryMock = EconomicsHTTP()
+    let recovery = LFNotesService(store: reopened, transport: { try await recoveryMock.call($0) }, keyProvider: { _ in "fixture" })
+    let recovered = try await recovery.generatePending(lessonID: regression.id, configuration: configuration)
+    await mustFail { _ = try await failingService.generatePending(lessonID: regression.id, configuration: configuration, rebuildSummary: true) }
+    let afterFailedRebuild = try await reopened.loadLesson(regression.id)
+    check(afterFailedRebuild.courseSummary == recovered.courseSummary && afterFailedRebuild.notes == recovered.notes && afterFailedRebuild.batches == recovered.batches && afterFailedRebuild.segments == recovered.segments, "A malformed rebuilt visual must not partially replace a complete rich summary or its underlying saved course")
+    _ = try await recovery.generatePending(lessonID: regression.id, configuration: configuration, rebuildSummary: true)
+    _ = try await reopened.setRecordingState(.paused, for: regression.id)
+    print("VISUAL_CHECK PASS malformed-progress/rebuild preserves prior snapshot and retry recovers")
+
+    let outputLesson = try await reopened.createLesson(title: "自动化测试 · 经济趋势图文（预设数据）")
+    _ = try await reopened.setLectureLanguage(.chinese, for: outputLesson.id)
+    _ = try await reopened.appendConfirmedSegments([LFConfirmedSegment(id: "visual-output-1", startTime: 0, endTime: 45, english: "自动化课堂样本。某虚拟经济体2023、2024、2025年的产出分别为100、110、121亿元。用柱形图比较各年数值，用折线图表示随年份变化。所有数字均为预设教学数据。")], to: outputLesson.id)
+    let outputMock = EconomicsHTTP()
+    let outputService = LFNotesService(store: reopened, transport: { try await outputMock.call($0) }, keyProvider: { _ in "fixture" })
+    let output = try await outputService.generatePending(lessonID: outputLesson.id, configuration: configuration)
+    check(output.courseSummary?.visuals?.count == 2 && output.courseSummary?.visuals?.map(\.kind.rawValue) == ["bar", "line"], "Economics trends must provide separate bar and line representations of the same given numeric sample")
+    _ = try await reopened.setRecordingState(.paused, for: outputLesson.id)
+    try checkNoStoredKey(root: root)
+    print("VISUAL_FIXTURE regression=\(regression.id.uuidString) output=\(outputLesson.id.uuidString)")
+}
+
+private func visualSourceCoverageChecks(root: URL, configuration: LFCloudConfiguration) async throws {
+    let store = try LFLessonStore(rootURL: root)
+    let lesson = try await store.createLesson(title: "Visual source coverage")
+    let sources = (1...9).map { LFConfirmedSegment(id: "source-\($0)", startTime: Double($0 - 1) * 10, endTime: Double($0) * 10, english: "Confirmed classroom fact \($0).") }
+    _ = try await store.appendConfirmedSegments(sources, to: lesson.id)
+    for forbidden in ["source-9", "other-lesson-source"] {
+        let mock = FixedVisualHTTP(blocks: try JSONSerialization.data(withJSONObject: [visualFixture("table", source: forbidden)]))
+        let service = LFNotesService(store: store, transport: { try await mock.call($0) }, keyProvider: { _ in "fixture" })
+        await mustFail { _ = try await service.generatePending(lessonID: lesson.id, configuration: configuration) }
+        let saved = try await store.loadLesson(lesson.id)
+        check(saved.notes.isEmpty && saved.courseSummary == nil, "A current-batch visual cannot borrow a source from a future batch or another lesson")
+        check(await mock.requests.count == 1, "Invalid visual references must fail without entering a retry loop")
+        _ = try await store.cancelBatches(for: lesson.id)
+    }
+    print("VISUAL_CHECK PASS real-service future/foreign-source rejection")
+}
+
 private func gatingChecks(root: URL) async throws {
     let store = try LFLessonStore(rootURL: root)
     let lesson = try await store.createLesson(title: "Accumulate a classroom explanation")
@@ -720,8 +1090,17 @@ struct LectureFlowAssertions {
         try await legacyRebuildChecks(root: root.appendingPathComponent("legacy", isDirectory: true), configuration: config)
         try await mapContractChecks()
         try await chineseCourseChecks(root: root.appendingPathComponent("chinese", isDirectory: true), configuration: config)
+        try await visualContractChecks()
+        try await visualResponseContractChecks()
+        try await createEconomicsFixtures(root: root.appendingPathComponent("economics", isDirectory: true), configuration: config)
+        try await visualSourceCoverageChecks(root: root.appendingPathComponent("visual-coverage", isDirectory: true), configuration: config)
         try checkNoStoredKey(root: root)
         print("LectureFlow assertions passed: dedup/conflict, 8k splitting, restart, token race, stale HTTP, retry, rolling summary/context, accumulation/flush, legacy migration/rebuild, bounded bilingual mind map, Chinese source, prompt contract, atomic failure preservation, edit/audio/tree export preservation, isolation, key redaction. Scripted responses do not verify live AI or ASR quality.")
-        if let uiFixtureRoot { try await createUIFixture(root: uiFixtureRoot, configuration: config) }
+        if let uiFixtureRoot {
+            try await createEconomicsFixtures(root: uiFixtureRoot, configuration: config)
+            // Keep the original water-cycle lesson newest, preserving its existing
+            // default-selection regression while UI tests explicitly pick economics.
+            try await createUIFixture(root: uiFixtureRoot, configuration: config)
+        }
     }
 }

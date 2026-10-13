@@ -3,8 +3,10 @@ import CoreText
 import Foundation
 import UIKit
 
+@MainActor
 enum LecturePDFExport {
-    static func write(text: String, title: String, to url: URL) throws {
+    static func write(text: String, title: String, visuals: [LFVisualBlock] = [], segments: [LFConfirmedSegment] = [], to url: URL) throws {
+        try LFVisualBlock.validateBlocks(visuals, allowedSourceIDs: segments.isEmpty ? nil : Set(segments.map(\.id)))
         let page = CGRect(x: 0, y: 0, width: 595, height: 842)
         let body = CGRect(x: 42, y: 48, width: 511, height: 736)
         let style = NSMutableParagraphStyle()
@@ -45,6 +47,36 @@ enum LecturePDFExport {
                 ])
                 position += visible.length
             } while position < document.length
+            // Draw the exact same diagrams, tables, axes and legends used by
+            // the app. Long blocks retain a readable width across continuation
+            // pages instead of shrinking an entire long table onto one page.
+            for block in visuals {
+                autoreleasepool {
+                    let image = LFVisualRenderer.image(for: block, sourceDescription: LFVisualRenderer.sources(block, segments: segments))
+                    let scale = body.width / image.size.width
+                    let scaledHeight = image.size.height * scale
+                    var offset: CGFloat = 0
+                    let visualBody = CGRect(x: body.minX, y: 62, width: body.width, height: 716)
+                    repeat {
+                        context.beginPage()
+                        pageNumber += 1
+                        let heading = offset == 0 ? "图文笔记 / Visual notes" : "图文笔记（续）/ Visual notes (continued)"
+                        (heading as NSString).draw(at: CGPoint(x: body.minX, y: 32), withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: UIColor.darkGray,
+                        ])
+                        let graphics = context.cgContext
+                        graphics.saveGState()
+                        graphics.clip(to: visualBody)
+                        image.draw(in: CGRect(x: visualBody.minX, y: visualBody.minY - offset, width: visualBody.width, height: scaledHeight))
+                        graphics.restoreGState()
+                        let footer = "LectureFlow · \(pageNumber)" as NSString
+                        footer.draw(at: CGPoint(x: 42, y: 811), withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 9), .foregroundColor: UIColor.gray,
+                        ])
+                        offset += visualBody.height
+                    } while offset < scaledHeight
+                }
+            }
         }
         guard !layoutFailed else { throw CocoaError(.fileWriteUnknown) }
         try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])

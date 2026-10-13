@@ -59,6 +59,8 @@
 		2E00E791C392C9CCB4ED272E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */; };
 		ACE7235A77DDA4FC7CF1447A /* LectureFlow-Licenses.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */; };
 		F310A400937AB67412C634F1 /* LectureFlowBaseEncoder.mlmodelc in Resources */ = {isa = PBXBuildFile; fileRef = F310A400937AB67412C634F2 /* LectureFlowBaseEncoder.mlmodelc */; };
+		F310A400937AB67412C63501 /* LFVisualTextExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F310A400937AB67412C63502 /* LFVisualTextExport.swift */; };
+		F310A400937AB67412C63503 /* LFVisualNotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F310A400937AB67412C63504 /* LFVisualNotesView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -169,6 +171,8 @@
 		716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = LectureFlow-Licenses.txt; sourceTree = "<group>"; };
 		F310A400937AB67412C634F2 /* LectureFlowBaseEncoder.mlmodelc */ = {isa = PBXFileReference; lastKnownFileType = folder; path = LectureFlowBaseEncoder.mlmodelc; sourceTree = "<group>"; };
+		F310A400937AB67412C63502 /* LFVisualTextExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFVisualTextExport.swift; sourceTree = "<group>"; };
+		F310A400937AB67412C63504 /* LFVisualNotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFVisualNotesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -396,6 +400,8 @@
 				8D3B45938225D720C1A2E24C /* LectureFlowModel.swift */,
 				768713E639448758DFDA4984 /* LectureFlowView.swift */,
 				F310A400937AB67412C634E2 /* LFNotesMapView.swift */,
+				F310A400937AB67412C63504 /* LFVisualNotesView.swift */,
+				F310A400937AB67412C63502 /* LFVisualTextExport.swift */,
 				1DE0F04B3400583FA3BABB4B /* LecturePDFExport.swift */,
 				9F40DE1E22A6EB9AD2A80EA9 /* LectureAudioCore.swift */,
 				63F65B15EC38395C6F48C1B4 /* LecturePCMStore.swift */,
@@ -677,6 +683,8 @@
 				08F3B90F0E4C3C2AB4397EAF /* LectureFlowModel.swift in Sources */,
 				02FE5FD47E549B4FA6BA29B0 /* LectureFlowView.swift in Sources */,
 				F310A400937AB67412C634E1 /* LFNotesMapView.swift in Sources */,
+				F310A400937AB67412C63503 /* LFVisualNotesView.swift in Sources */,
+				F310A400937AB67412C63501 /* LFVisualTextExport.swift in Sources */,
 				5671515E3E8BE51E067BE32E /* LecturePDFExport.swift in Sources */,
 				462E5D5D2D0C6BAE492CE9A2 /* LectureAudioCore.swift in Sources */,
 				5A1EE06C9731B2F5C6BC7052 /* LecturePCMStore.swift in Sources */,
@@ -1028,7 +1036,7 @@
 				CODE_SIGN_ENTITLEMENTS = WhisperAX/Resources/WhisperAX.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"WhisperAX/Preview Content\"";
 				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
@@ -1049,7 +1057,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yufeizheng.lectureflow;
 				PRODUCT_NAME = LectureFlow;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1072,7 +1080,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WhisperAX/Resources/WhisperAX.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"WhisperAX/Preview Content\"";
 				DEVELOPMENT_TEAM = "${DEVELOPMENT_TEAM}";
@@ -1093,7 +1101,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yufeizheng.lectureflow;
 				PRODUCT_NAME = LectureFlow;
 				SDKROOT = iphoneos;

@@ -11,6 +11,8 @@ struct LectureFlowView: View {
     @State private var editingLessonID: UUID?
     @State private var sharedDocument: LectureShareDocument?
     @State private var showingMindMap = false
+    @State private var showingVisuals = false
+    @State private var selectedVisualID: String?
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -29,6 +31,7 @@ struct LectureFlowView: View {
                             }
                         }
                         .disabled(!model.canChangeLesson)
+                        .accessibilityIdentifier("lectureflow.lesson.\(lesson.id.uuidString)")
                         .listRowBackground(model.lesson?.id == lesson.id ? Color.accentColor.opacity(0.12) : Color.clear)
                     }
                     if model.lessons.isEmpty {
@@ -88,6 +91,12 @@ struct LectureFlowView: View {
         }
         .task { await model.initialize() }
         .sheet(isPresented: $showingSettings) { LectureCloudSettings(model: model) }
+        .fullScreenCover(isPresented: $showingVisuals) {
+            if let blocks = model.lesson?.courseSummary?.visuals,
+               (try? LFVisualBlock.validateBlocks(blocks)) != nil {
+                LFVisualNotesGallery(model: model, blocks: blocks, initialID: selectedVisualID)
+            }
+        }
         .fullScreenCover(isPresented: $showingMindMap) {
             if let lesson = model.lesson, let nodes = lesson.courseSummary?.mindMap {
                 NavigationStack {
@@ -109,7 +118,7 @@ struct LectureFlowView: View {
             LectureShareView(url: document.url)
         }
         .onChange(of: model.exportURL) { _, url in
-            if let url { sharedDocument = LectureShareDocument(url: url) }
+            if let url, !showingVisuals { sharedDocument = LectureShareDocument(url: url) }
         }
         .alert("新建课程", isPresented: $showingNewLesson) {
             TextField("课程名称", text: $lessonTitle)
@@ -261,6 +270,25 @@ struct LectureFlowView: View {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
             if let summary = lesson.courseSummary {
+                if let visuals = summary.visuals, !visuals.isEmpty {
+                    if (try? LFVisualBlock.validateBlocks(visuals)) != nil {
+                        HStack {
+                            Label("图文笔记 · \(visuals.count) 张", systemImage: "rectangle.3.group").font(.headline)
+                            Spacer()
+                            Button("查看全部图表") { selectedVisualID = nil; showingVisuals = true }
+                                .accessibilityIdentifier("lectureflow.visual.gallery")
+                        }
+                        DisclosureGroup("展开图表预览") {
+                            ForEach(visuals) { block in
+                                LFVisualNotesCard(block: block, sourceDescription: LFVisualRenderer.sources(block, segments: lesson.segments)) {
+                                    selectedVisualID = block.id; showingVisuals = true
+                                }
+                            }
+                        }
+                    } else {
+                        Text("图文内容格式不完整，请更新课程笔记后重试。").font(.caption).foregroundStyle(.orange)
+                    }
+                }
                 if let nodes = summary.mindMap, !nodes.isEmpty {
                     HStack {
                         Text("中英思维导图").font(.headline)
@@ -306,6 +334,10 @@ struct LectureFlowView: View {
             if lesson.notes.isEmpty {
                 Text("启用 AI 后，思维导图与双语笔记随课堂内容持续更新。暂停后可用“梳理整堂课”整理已有原文。网络失败会保留原文和已有笔记。")
                     .foregroundStyle(.secondary)
+            }
+            if let name = model.lastExportName {
+                Text("已导出：\(name)").font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("lectureflow.export.filename")
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -425,7 +457,9 @@ private struct LectureShareDocument: Identifiable { let id = UUID(); let url: UR
 private struct LectureShareView: UIViewControllerRepresentable {
     let url: URL
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.view.accessibilityIdentifier = "lectureflow.share.sheet"
+        return controller
     }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

@@ -71,6 +71,7 @@ jobs:
           swiftc -swift-version 5 -parse-as-library \
             Examples/WhisperAX/WhisperAX/LectureFlow/LFModels.swift \
             Examples/WhisperAX/WhisperAX/LectureFlow/LFLessonStore.swift \
+            Examples/WhisperAX/WhisperAX/LectureFlow/LFVisualTextExport.swift \
             Examples/WhisperAX/WhisperAX/LectureFlow/LFKeychain.swift \
             Examples/WhisperAX/WhisperAX/LectureFlow/LFNotesService.swift \
             Tests/LectureFlowAssertions.swift -o build/notes-checks 2>&1 | tee build/logs/notes-compile.log
@@ -121,8 +122,8 @@ jobs:
           set -o pipefail
           mkdir -p build/package/Payload
           ditto build/DerivedData/Build/Products/Release-iphoneos/LectureFlow.app build/package/Payload/LectureFlow.app
-          (cd build/package && zip -qry ../delivery/LectureFlow-0.2.0-build3-unsigned.ipa Payload)
-          python3 scripts/lectureflow_validate.py --ipa build/delivery/LectureFlow-0.2.0-build3-unsigned.ipa \
+          (cd build/package && zip -qry ../delivery/LectureFlow-0.3.0-build4-unsigned.ipa Payload)
+          python3 scripts/lectureflow_validate.py --ipa build/delivery/LectureFlow-0.3.0-build4-unsigned.ipa \
             --report build/delivery/IPA-VERIFICATION.json | tee build/logs/ipa-verification.log
           cp Docs/LectureFlow/INSTALL-WINDOWS-zh.txt build/delivery/
           cp Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt build/delivery/
@@ -130,10 +131,10 @@ jobs:
           cp Examples/WhisperAX/WhisperAX/Resources/LectureFlow-Licenses.txt build/delivery/
           cp build/encoder-export/ENCODER-EXPORT.json build/delivery/
           cp Examples/WhisperAX/WhisperAX/LectureFlowBaseEncoder.mlmodelc/lectureflow-encoder-manifest.json build/delivery/
-          (cd build/delivery && shasum -a 256 LectureFlow-0.2.0-build3-unsigned.ipa > SHA256SUMS.txt)
-          (cd build/delivery && zip -q ../LectureFlow-0.2.0-Windows-install.zip ./*)
-          mv build/LectureFlow-0.2.0-Windows-install.zip build/delivery/
-          (cd build/delivery && shasum -a 256 LectureFlow-0.2.0-Windows-install.zip >> SHA256SUMS.txt)
+          (cd build/delivery && shasum -a 256 LectureFlow-0.3.0-build4-unsigned.ipa > SHA256SUMS.txt)
+          (cd build/delivery && zip -q ../LectureFlow-0.3.0-Windows-install.zip ./*)
+          mv build/LectureFlow-0.3.0-Windows-install.zip build/delivery/
+          (cd build/delivery && shasum -a 256 LectureFlow-0.3.0-Windows-install.zip >> SHA256SUMS.txt)
       - name: Simulator launch and initial iPad screenshot (supplemental)
         continue-on-error: true
         timeout-minutes: 10
@@ -161,7 +162,7 @@ jobs:
           sleep 5
           xcrun simctl io "$DEVICE" screenshot build/logs/ipad-progressive-notes.png
           xcrun simctl shutdown "$DEVICE"
-      - name: iPad mind map interaction and Chinese language persistence
+      - name: iPad mind map, visual notebook, exports and Chinese persistence
         timeout-minutes: 15
         run: |
           set -o pipefail
@@ -175,6 +176,12 @@ jobs:
             2>&1 | tee build/logs/ui-feature-tests.log
           xcrun xcresulttool export attachments --path build/ui-feature-tests.xcresult \
             --output-path build/ui-feature-screenshots
+      - name: Parse actual exported PNG and PDF files and render every PDF page
+        run: |
+          set -o pipefail
+          DEVICE=$(cat build/logs/ipad-device.txt)
+          APP_DATA=$(xcrun simctl get_app_container "$DEVICE" com.yufeizheng.lectureflow data)
+          swift scripts/lectureflow_check_visual_exports.swift "$APP_DATA/Documents/LectureFlow/Exports" build/visual-exports 2>&1 | tee build/logs/visual-exports.log
       - name: Synthetic English, Chinese and quiet-speech local model checks
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_asr }}
         timeout-minutes: 25
@@ -191,7 +198,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: LectureFlow-0.2.0-build3-${{ github.sha }}
+          name: LectureFlow-0.3.0-build4-${{ github.sha }}
           path: |
             build/delivery/
             build/logs/
@@ -200,7 +207,26 @@ jobs:
             build/asr-controls/
             build/ui-feature-screenshots/
             build/ui-feature-tests.xcresult/
+            build/visual-exports/
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Econometrics vocabulary quality probe (reported separately)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_asr }}
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          python3 scripts/lectureflow_asr_smoke.py --fixture-set econometrics --output build/asr-econometrics --compute-units "${{ inputs.asr_compute_units || 'cpuAndGPU' }}" --encoder-model-path build/DerivedData/Build/Products/Release-iphoneos/LectureFlow.app/LectureFlowBaseEncoder.mlmodelc 2>&1 | tee build/logs/asr-econometrics-terminal.log
+      - name: Preserve econometrics quality probe separately from release gates
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: LectureFlow-econometrics-quality-${{ github.sha }}
+          path: |
+            build/asr-econometrics/
+            build/logs/asr-econometrics-terminal.log
+          if-no-files-found: warn
           retention-days: 30
 
   diagnose-asr:

@@ -21,6 +21,7 @@ final class LectureFlowModel: ObservableObject {
     @Published private(set) var autoNotesEnabled = false
     @Published var errorMessage: String?
     @Published var exportURL: URL?
+    @Published private(set) var lastExportName: String?
     @Published private(set) var playing = false
     let audio = LectureAudioSession()
 
@@ -404,7 +405,7 @@ final class LectureFlowModel: ObservableObject {
 
     func export(_ format: LFExportFormat) async {
         guard let id = lesson?.id, let store else { return }
-        do { exportURL = try await store.exportLesson(id, format: format) }
+        do { let url = try await store.exportLesson(id, format: format); lastExportName = url.lastPathComponent; exportURL = url }
         catch { errorMessage = error.localizedDescription }
     }
 
@@ -414,7 +415,27 @@ final class LectureFlowModel: ObservableObject {
             let textURL = try await store.exportLesson(current.id, format: .text)
             let text = try String(contentsOf: textURL, encoding: .utf8)
             let target = textURL.deletingPathExtension().appendingPathExtension("pdf")
-            try LecturePDFExport.write(text: text, title: current.title, to: target)
+            try LecturePDFExport.write(text: text, title: current.title, visuals: current.courseSummary?.visuals ?? [],
+                                       segments: current.segments, to: target)
+            lastExportName = target.lastPathComponent
+            exportURL = target
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func exportVisual(_ block: LFVisualBlock) async {
+        guard let current = lesson, let store else { return }
+        do {
+            try LFVisualBlock.validateBlocks([block], allowedSourceIDs: Set(current.segments.map(\.id)))
+            let folder = store.rootURL.appendingPathComponent("Exports", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            // Cloud IDs are never used as paths. Distinct blocks of the same
+            // kind keep separate, stable files, including after reordering.
+            let visualID = SHA256.hash(data: Data(block.id.utf8)).map { String(format: "%02x", $0) }.joined()
+            let target = folder.appendingPathComponent(current.id.uuidString + "-visual-" + block.kind.rawValue + "-" + visualID + ".png")
+            let image = LFVisualRenderer.image(for: block, sourceDescription: LFVisualRenderer.sources(block, segments: current.segments))
+            guard let data = image.pngData() else { throw LFError.invalid("图表图片暂时无法导出。") }
+            try data.write(to: target, options: [.atomic, .completeFileProtectionUnlessOpen])
+            lastExportName = target.lastPathComponent
             exportURL = target
         } catch { errorMessage = error.localizedDescription }
     }

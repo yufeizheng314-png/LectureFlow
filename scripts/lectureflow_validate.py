@@ -60,7 +60,7 @@ def ipa(path, report):
         assert len(plist_names)==1
         prefix = plist_names[0][:-len('Info.plist')]
         info=plistlib.loads(z.read(plist_names[0]))
-        for key,value in {'CFBundleIdentifier':'com.yufeizheng.lectureflow','CFBundleDisplayName':'LectureFlow','CFBundleShortVersionString':'0.2.0','CFBundleVersion':'3','UIDeviceFamily':[2],'UIBackgroundModes':['audio']}.items():
+        for key,value in {'CFBundleIdentifier':'com.yufeizheng.lectureflow','CFBundleDisplayName':'LectureFlow','CFBundleShortVersionString':'0.3.0','CFBundleVersion':'4','UIDeviceFamily':[2],'UIBackgroundModes':['audio']}.items():
             assert info[key] == value, (key,info.get(key))
         assert float(info['MinimumOSVersion'])>=17.0
         assert info['NSMicrophoneUsageDescription']

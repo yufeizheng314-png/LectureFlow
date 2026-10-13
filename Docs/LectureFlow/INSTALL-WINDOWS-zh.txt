@@ -1,6 +1,6 @@
-LectureFlow 0.2.0 / build 3 — Windows + iPad 安装说明
+LectureFlow 0.3.0 / build 4 — Windows + iPad 安装说明
 
-目标发布标记：v0.2.0-unsigned.1；目标 IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
+目标发布标记：v0.3.0-unsigned.1；目标 IPA：LectureFlow-0.3.0-build4-unsigned.ipa。
 最终交付以完整构建、IPA-VERIFICATION.json 和 SHA256SUMS.txt 校验完成的文件为准；本次真机验收待完成。
 这是未签名的 arm64 IPA，需用自己的 Apple 账号签名。目标为 iPadOS 17+、iPad Air 11 英寸 M2。
 沿用现有 WhisperAX 工程，应用名为 LectureFlow，bundle ID 为 com.yufeizheng.lectureflow。
@@ -8,7 +8,7 @@ LectureFlow 0.2.0 / build 3 — Windows + iPad 安装说明
 从已安装的 0.1.0 / build 1 升级
 1. 在旧应用逐课打开“导出笔记”，导出 Markdown / TXT / PDF；在“原音文件”的“录音操作”中逐个“导出 WAV 原音”。确认备份文件可打开、原音可回放，再开始升级。
 2. 检查最终 IPA 的 SHA-256：
-   Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.2.0-build3-unsigned.ipa'
+   Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.3.0-build4-unsigned.ipa'
    结果须与同一交付的 SHA256SUMS.txt 一致；Windows ZIP 的 SHA 以交付外部校验文件为准。
 3. 用 USB 连接并信任 iPad，打开 Windows AltServer。沿用本机已成功的操作：按住 Shift，左键单击 AltServer 托盘图标，选择 Sideload .ipa，再选此 IPA、iPad 和原 Apple 签名账号。
 4. 使用同一账号覆盖安装，保持 com.yufeizheng.lectureflow；不要先卸载。按系统提示信任开发者 / 启用开发者模式后，核对旧课程、原文、原音、手动编辑及已有 DeepSeek 配置仍在。
@@ -26,6 +26,7 @@ https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
 - 低音量只在 ASR 输入上做受限增益，保存 / 导出的 WAV 不变。每个 8 秒转写区间使用前后各最多 4 秒上下文，只保存当前区间文字；识别落后时原音继续保存，可暂停后用“补转写原音”重试。
 - AI 可选；未配置时仍可本地录音和转写。已有 DeepSeek 的 HTTPS 地址、模型名和 Key 可继续使用，Key 保存在本机钥匙串。新服务需填写支持 chat/completions 与 JSON 对象输出的完整 HTTPS 地址、模型及个人 Key。
 - 云笔记发送课程标题、有限的已确认原文、已有双语笔记、人工编辑、累计梳理及概念树到所选服务；原音留在本机，费用按服务账号计费。
+- 图文笔记依据课程内容生成表格、流程/因果图、数据图和公式卡片；全屏可查看与分享PNG，PDF包含实际图表。旧课需在AI开启且录音暂停时点“梳理整堂课”补充图文。
 - 双语笔记和思维导图随课程累计更新。可拖动、缩放导图，点击节点查看完整中英内容，点“全屏”展开。暂停保存后可点“梳理整堂课”整理旧课，过程笔记和人工编辑保留；失败保留旧梳理。
 - 有上下文依据时可补全断句和术语，笔记直接呈现课程内容，不逐句讲述“推断 / 新片段 / 听不清”；不应编造数字、人名、公式或事实。关键内容以原文和原音核对。
 - 切换语言、查看导图不用另申请 Key。GPT / ChatGPT Pro 免 API Key 登录未接入，留待后续工作。

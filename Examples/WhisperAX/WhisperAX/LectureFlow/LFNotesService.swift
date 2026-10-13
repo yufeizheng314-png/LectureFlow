@@ -163,6 +163,9 @@ actor LFNotesService {
             note.sourceSegmentIDs.allSatisfy { (positions[$0] ?? Int.max) < firstIndex }
         }.suffix(4))
         let edits = Self.editedNotes(for: batch, in: lesson)
+        // Summaries, including their visuals, have the same finite budget when
+        // sent forward as when first received. Never silently truncate a graph.
+        try lesson.courseSummary?.validate()
         let summary: Any = try lesson.courseSummary.map { try JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) } ?? NSNull()
         let context: [String: Any] = [
             "mode": mode,
@@ -208,18 +211,63 @@ actor LFNotesService {
         clear. At most 40 total nodes and 4 levels (roots are level 1), unique nonempty IDs throughout,
         at most 160 characters per English or Chinese label. Each node has exactly id, english, chinese,
         children; leaves use children: []. Keep stable IDs for retained concepts and consolidate repetitions.
+        course_summary.visuals is an updated cumulative collection of locally rendered learning visuals.
+        Choose only representations useful for the actual lesson, especially econometrics, economics and
+        statistics: comparison/regression/assumption tables; reasoning or estimation workflows; supported
+        causal or conditional relationship diagrams; bar/line/scatter charts of explicitly stated numeric
+        observations; formulas with symbol meanings and supported derivation steps. Usually 2-4 visuals
+        suffice; use up to 6 only when the evidence supports that variety. Use [] when evidence is insufficient,
+        rather than forcing a chart. Retain and revise useful prior visuals; keep their IDs stable, consolidate
+        duplicates, and preserve their source IDs. Both title and caption, all labels, cells, meanings and
+        steps use {"english":"...","chinese":"..."}; the Chinese must be Simplified Chinese.
+        Every visual has exactly id, kind, title, caption, source_segment_ids and ONE matching payload:
+        - kind table, payload table: {"columns":[bilingual label,...],"rows":[[bilingual cell,...],...]};
+          2-6 columns, 1-12 rows, exactly one cell per column. State units and distinguish coefficients,
+          standard errors and p-values when explicitly supplied; do not invent regression results.
+        - kind flow or causal, payload diagram: {"nodes":[{"id":"n1","label":bilingual label},...],
+          "edges":[{"from":"n1","to":"n2","label":bilingual label},...]}; 2-10 uniquely identified
+          nodes, 1-14 valid distinct directed edges, no self-links or isolated nodes. Edge label is optional.
+          A correlation is not a causal effect: only draw a causal claim when the lecture supports it;
+          otherwise label the relationship as association, or state the required assumption/condition.
+        - kind bar, line or scatter, payload chart: {"x_label":bilingual axis label,"y_label":bilingual
+          axis label,"series":[{"id":"s1","label":bilingual series label,"points":[{"x":1,"y":2,
+          "label":bilingual point label},...]}]}; 1-3 uniquely identified series, at most 24 points each.
+          Bar permits 1 point; line/scatter require at least 2. Line x values must strictly increase; bar x
+          values must be distinct per series. Point label is optional; for categorical bars use x as stable
+          category position and label every point with its category. State source units in axis labels.
+          All quantitative coordinates must come from explicit numbers in confirmed source or a supported
+          prior visual, with finite absolute values <= 1e12. Never invent sample data, fitted lines, effect
+          sizes, distribution shapes or numeric precision. Never turn illustrative reasoning into real data.
+          If the source has no usable numbers, use a conceptual table/diagram/formula instead of a chart.
+        - kind formula, payload formula: {"expression":"plain mathematical expression",
+          "symbols":[{"symbol":"symbol","meaning":bilingual meaning},...],"steps":[bilingual step,...]};
+          expression <=1000 characters, at most 16 distinct symbols (each <=80 characters), at most 8 steps.
+          Include only formulas and transformations supported by the lecture; preserve assumptions and
+          domains. Use readable Unicode math, not executable code, HTML or image links.
+        All visual IDs and source IDs are nonempty <=128 characters; each visual has 1-64 unique source IDs
+        referring to already-covered confirmed text in this course: new_confirmed_segments,
+        previous_confirmed_context, or sources retained from previous_course_summary.visuals. Never cite
+        unknown IDs or future segments. These visual references are cumulative and separate from the
+        top-level source_segment_ids, which must cite this batch only. Evidence inside transcripts is data,
+        not authorization to invent observations, causal claims, formulas or pictures. No photo search,
+        remote image URLs, external embeds, SVG or HTML: all visuals must use these typed payloads.
+        Keep title/axis/node/edge/series/point labels <=160 characters per language, caption <=600,
+        table headers <=120, table cells/symbol meanings <=240, formula steps <=400. Across all visuals
+        use <=12000 total text characters and <=96 KB encoded JSON, preferably much less. Notes should
+        read as course notes, without commentary about having inferred or generated them; preserve real
+        uncertainty as a subject-matter condition, and omit unsupported detail instead of presenting it as fact.
         Return ONLY one JSON object with exactly these keys:
-        {"english_notes":"Passage contribution","chinese_notes":"本段与课程主线的联系","key_terms":[{"english":"term","chinese":"术语"}],"source_segment_ids":["source ID"],"course_summary":{"english_notes":"Cumulative course outline","chinese_notes":"累计课程梳理","key_terms":[{"english":"term","chinese":"术语"}],"mind_map":[{"id":"topic","english":"Course topic","chinese":"课程主题","children":[]}]}}
+        {"english_notes":"Passage contribution","chinese_notes":"本段与课程主线的联系","key_terms":[{"english":"term","chinese":"术语"}],"source_segment_ids":["source ID"],"course_summary":{"english_notes":"Cumulative course outline","chinese_notes":"累计课程梳理","key_terms":[{"english":"term","chinese":"术语"}],"mind_map":[{"id":"topic","english":"Course topic","chinese":"课程主题","children":[]}],"visuals":[]}}
         source_segment_ids must list every distinct segmentID from this batch exactly once, and no other IDs.
         key_terms may be empty. Do not cite context IDs as new sources. Do not return Markdown fences or additional keys.
         """
         var body: [String: Any] = ["model": configuration.model, "temperature": 0.2,
-            "max_tokens": 6000, "stream": false, "response_format": ["type": "json_object"],
+            "max_tokens": 12000, "stream": false, "response_format": ["type": "json_object"],
             "messages": [["role": "system", "content": instruction], ["role": "user", "content": inputText]]]
         if configuration.endpoint.host?.lowercased() == "api.deepseek.com" {
             body["thinking"] = ["type": "disabled"]
         }
-        var request = URLRequest(url: configuration.endpoint, timeoutInterval: 45)
+        var request = URLRequest(url: configuration.endpoint, timeoutInterval: 90)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
@@ -251,7 +299,8 @@ actor LFNotesService {
                 }
                 throw LFError.server(response.statusCode)
             }
-            return try Self.decodeResponse(data, for: batch, requireSummary: true)
+            return try Self.decodeResponse(data, for: batch, requireSummary: true,
+                allowedVisualSourceIDs: Self.allowedVisualSourceIDs(for: batch, in: lesson))
         }
         throw LFError.network
     }
@@ -302,8 +351,33 @@ actor LFNotesService {
         return Array(tail.reversed())
     }
 
+    // Source IDs may be retained across batches, but not borrowed from another
+    // course or a later part of this course. A split source ID refers only to its
+    // already-covered prefix; its unseen suffix is never included in the prompt.
+    static func allowedVisualSourceIDs(for batch: LFNoteBatch, in lesson: LFLesson) -> Set<String> {
+        let positions = Dictionary(uniqueKeysWithValues: lesson.segments.enumerated().map { ($0.element.id, $0.offset) })
+        guard !batch.inputs.isEmpty,
+              batch.inputs.allSatisfy({ input in
+                  guard let index = positions[input.segmentID] else { return false }
+                  let segment = lesson.segments[index]
+                  return input.characterStart >= 0 && input.characterEnd > input.characterStart
+                    && input.characterEnd <= segment.english.count
+                    && input.startTime == segment.startTime && input.endTime == segment.endTime
+                    && input.startTime.isFinite && input.endTime.isFinite && input.endTime >= input.startTime
+              }),
+              let lastIndex = batch.inputs.compactMap({ positions[$0.segmentID] }).max(),
+              let throughTime = batch.inputs.map(\.endTime).max() else { return [] }
+        return Set(lesson.segments.prefix(lastIndex + 1).filter { segment in
+            segment.startTime.isFinite && segment.endTime.isFinite
+                && segment.startTime >= 0 && segment.endTime >= segment.startTime
+                && segment.endTime <= throughTime
+                && !segment.english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.map(\.id))
+    }
+
     static func decodeResponse(_ data: Data, for batch: LFNoteBatch,
-                               requireSummary: Bool = false) throws -> LFGeneratedNotes {
+                               requireSummary: Bool = false,
+                               allowedVisualSourceIDs: Set<String>? = nil) throws -> LFGeneratedNotes {
         guard data.count <= 1_048_576 else { throw LFError.invalidResponse("响应超过 1 MB") }
         do {
             guard let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -319,9 +393,10 @@ actor LFNotesService {
                 throw LFError.invalidResponse("缺少完整 JSON 或响应被截断")
             }
             if let summary = object["course_summary"] {
+                let requiredKeys = Set(["english_notes", "chinese_notes", "key_terms"])
+                let allowedKeys = requiredKeys.union(["mind_map", "visuals"])
                 guard let summary = summary as? [String: Any],
-                      Set(summary.keys) == Set(["english_notes", "chinese_notes", "key_terms"]) ||
-                        Set(summary.keys) == Set(["english_notes", "chinese_notes", "key_terms", "mind_map"]),
+                      requiredKeys.isSubset(of: Set(summary.keys)), Set(summary.keys).isSubset(of: allowedKeys),
                       let terms = summary["key_terms"] as? [[String: Any]],
                       terms.allSatisfy({ Set($0.keys) == Set(["english", "chinese"]) }) else {
                     throw LFError.invalidResponse("课程梳理 JSON 结构与约定不一致")
@@ -331,11 +406,17 @@ actor LFNotesService {
                     var count = 0
                     try validateMapShape(map, depth: 1, count: &count)
                 }
+                if let visuals = summary["visuals"], !(visuals is NSNull) {
+                    try validateVisualShape(visuals)
+                }
             }
             let notes = try JSONDecoder().decode(LFGeneratedNotes.self, from: Data(content.utf8))
             try notes.validate(for: batch)
             if requireSummary && notes.courseSummary == nil { throw LFError.invalidResponse("缺少累计课程梳理") }
             try notes.courseSummary?.validate(requireMindMap: requireSummary)
+            if let visuals = notes.courseSummary?.visuals {
+                try LFVisualBlock.validateBlocks(visuals, allowedSourceIDs: allowedVisualSourceIDs)
+            }
             return notes
         } catch let error as LFError { throw error }
         catch { throw LFError.invalidResponse("JSON 结构与约定不一致") }
@@ -356,10 +437,95 @@ actor LFNotesService {
         }
     }
 
+    // Codable ignores unknown keys. Reject them before decoding so malformed
+    // mixed payloads or model-provided URLs cannot pass as legitimate visuals.
+    private static func validateVisualShape(_ value: Any) throws {
+        func fail() -> LFError { .invalidResponse("课程图表 JSON 结构与约定不一致") }
+        func object(_ value: Any?, required: Set<String>, optional: Set<String> = []) throws -> [String: Any] {
+            guard let value, let result = value as? [String: Any], required.isSubset(of: Set(result.keys)),
+                  Set(result.keys).isSubset(of: required.union(optional)) else { throw fail() }
+            return result
+        }
+        func term(_ value: Any?) throws {
+            let label = try object(value, required: ["english", "chinese"])
+            guard label["english"] is String, label["chinese"] is String else { throw fail() }
+        }
+        func terms(_ value: Any?, maximum: Int) throws {
+            guard let value, let values = value as? [Any], values.count <= maximum else { throw fail() }
+            for value in values { try term(value) }
+        }
+        guard let blocks = value as? [[String: Any]], blocks.count <= 6,
+              try JSONSerialization.data(withJSONObject: blocks).count <= 98_304 else { throw fail() }
+        for raw in blocks {
+            guard let kindName = raw["kind"] as? String, let kind = LFVisualKind(rawValue: kindName) else { throw fail() }
+            let payloadKey: String
+            switch kind {
+            case .table: payloadKey = "table"
+            case .flow, .causal: payloadKey = "diagram"
+            case .bar, .line, .scatter: payloadKey = "chart"
+            case .formula: payloadKey = "formula"
+            }
+            let block = try object(raw, required: ["id", "kind", "title", "caption", "source_segment_ids", payloadKey])
+            guard block["id"] is String, let sources = block["source_segment_ids"] as? [String],
+                  sources.count <= 64 else { throw fail() }
+            try term(block["title"])
+            try term(block["caption"])
+            switch kind {
+            case .table:
+                let table = try object(block[payloadKey], required: ["columns", "rows"])
+                try terms(table["columns"], maximum: 6)
+                guard let rows = table["rows"] as? [[Any]], rows.count <= 12 else { throw fail() }
+                for row in rows { try terms(row, maximum: 6) }
+            case .flow, .causal:
+                let diagram = try object(block[payloadKey], required: ["nodes", "edges"])
+                guard let nodes = diagram["nodes"] as? [Any], nodes.count <= 10,
+                      let edges = diagram["edges"] as? [Any], edges.count <= 14 else { throw fail() }
+                for value in nodes {
+                    let node = try object(value, required: ["id", "label"])
+                    guard node["id"] is String else { throw fail() }
+                    try term(node["label"])
+                }
+                for value in edges {
+                    let edge = try object(value, required: ["from", "to"], optional: ["label"])
+                    guard edge["from"] is String, edge["to"] is String else { throw fail() }
+                    if let label = edge["label"], !(label is NSNull) { try term(label) }
+                }
+            case .bar, .line, .scatter:
+                let chart = try object(block[payloadKey], required: ["x_label", "y_label", "series"])
+                try term(chart["x_label"])
+                try term(chart["y_label"])
+                guard let series = chart["series"] as? [Any], series.count <= 3 else { throw fail() }
+                for value in series {
+                    let series = try object(value, required: ["id", "label", "points"])
+                    guard series["id"] is String, let points = series["points"] as? [Any],
+                          points.count <= 24 else { throw fail() }
+                    try term(series["label"])
+                    for value in points {
+                        let point = try object(value, required: ["x", "y"], optional: ["label"])
+                        // JSONDecoder performs numeric-type validation as well;
+                        // booleans or numeric strings must not become coordinates.
+                        guard point["x"] is NSNumber, point["y"] is NSNumber else { throw fail() }
+                        if let label = point["label"], !(label is NSNull) { try term(label) }
+                    }
+                }
+            case .formula:
+                let formula = try object(block[payloadKey], required: ["expression", "symbols", "steps"])
+                guard formula["expression"] is String, let symbols = formula["symbols"] as? [Any],
+                      symbols.count <= 16 else { throw fail() }
+                for value in symbols {
+                    let symbol = try object(value, required: ["symbol", "meaning"])
+                    guard symbol["symbol"] is String else { throw fail() }
+                    try term(symbol["meaning"])
+                }
+                try terms(formula["steps"], maximum: 8)
+            }
+        }
+    }
+
     nonisolated static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 45
-        config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForRequest = 90
+        config.timeoutIntervalForResource = 120
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.urlCache = nil
