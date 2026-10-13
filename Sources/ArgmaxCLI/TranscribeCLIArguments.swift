@@ -31,6 +31,12 @@ struct TranscribeCLIArguments: ParsableArguments {
     @Option(help: "Compute units for mel spectrogram model with {all,cpuOnly,cpuAndGPU,cpuAndNeuralEngine,random}; CPU-only is useful on virtualized Macs")
     var melComputeUnits: ComputeUnits = .cpuAndGPU
 
+    @Flag(help: "Use CPU-only MLTensor operations during file transcription (macOS 15+), independently of model compute units")
+    var tensorCpuOnly: Bool = false
+
+    @Flag(help: "Print bounded audio, mel and encoder tensor statistics for diagnosis; does not change decoding")
+    var diagnosticTensors: Bool = false
+
     @Option(help: "Compute units for audio encoder model with {all,cpuOnly,cpuAndGPU,cpuAndNeuralEngine,random}")
     var audioEncoderComputeUnits: ComputeUnits = .cpuAndNeuralEngine
 

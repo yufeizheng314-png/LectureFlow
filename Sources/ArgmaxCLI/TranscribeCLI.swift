@@ -77,6 +77,7 @@ struct TranscribeCLI: AsyncParsableCommand {
     mutating func run() async throws {
         if cliArguments.verbose {
             Logging.shared.logLevel = .debug
+            Logging.shared.loggingCallback = { print($0) }
         }
         if cliArguments.stream {
             try await transcribeStream()
@@ -127,6 +128,40 @@ struct TranscribeCLI: AsyncParsableCommand {
 
         let config = TranscribeCLIUtils.createWhisperKitConfig(from: cliArguments)
         let whisperKit = try await WhisperKit(config)
+
+        if cliArguments.diagnosticTensors {
+            print("Diagnostic model: \(whisperKit.modelVariant), multilingual: \(whisperKit.textDecoder.isModelMultilingual), mel bands: \(String(describing: whisperKit.featureExtractor.melCount)), encoder dimension: \(String(describing: whisperKit.audioEncoder.embedSize)), decoder cache dimension: \(String(describing: whisperKit.textDecoder.kvCacheEmbedDim))")
+            for path in resolvedAudioPaths {
+                let audio = try AudioProcessor.loadAudioAsFloatArray(fromPath: path, endTime: 30)
+                let rms = sqrt(audio.reduce(0.0) { $0 + Double($1) * Double($1) } / Double(max(1, audio.count)))
+                print("Diagnostic decoded audio: frames=\(audio.count), rms=\(rms), peak=\(audio.map { abs($0) }.max() ?? 0)")
+                if let padded = AudioProcessor.padOrTrimAudio(fromArray: audio),
+                   let mel = try await whisperKit.featureExtractor.logMelSpectrogram(fromAudio: padded) as? MLMultiArray,
+                   let encoded = try await whisperKit.audioEncoder.encodeFeatures(mel) as? MLMultiArray {
+                    printDiagnosticTensor(mel, name: "mel")
+                    printDiagnosticTensor(encoded, name: "encoder")
+                    if let tokenizer = whisperKit.tokenizer,
+                       let inputs = try whisperKit.textDecoder.prepareDecoderInputs(withPrompt: [tokenizer.specialTokens.startOfTranscriptToken]) as? DecodingInputs {
+                        inputs.inputIds[0] = NSNumber(value: tokenizer.specialTokens.startOfTranscriptToken)
+                        for (name, tensor) in [("key-input", inputs.keyCache), ("value-input", inputs.valueCache),
+                                               ("padding-mask", inputs.decoderKeyPaddingMask), ("update-mask", inputs.kvCacheUpdateMask)] {
+                            printDiagnosticTensor(tensor, name: name)
+                        }
+                        let predicted = try await whisperKit.textDecoder.predictLogits(TextDecoderMLMultiArrayInputType(
+                            inputIds: inputs.inputIds, cacheLength: inputs.cacheLength, keyCache: inputs.keyCache,
+                            valueCache: inputs.valueCache, kvCacheUpdateMask: inputs.kvCacheUpdateMask,
+                            encoderOutputEmbeds: encoded, decoderKeyPaddingMask: inputs.decoderKeyPaddingMask)) as? TextDecoderMLMultiArrayOutputType
+                        if let logits = predicted?.logits {
+                            printDiagnosticTensor(logits, name: "raw-SOT-logits")
+                            let top = (0..<logits.count).map { ($0, logits[$0].doubleValue) }.sorted { $0.1 > $1.1 }.prefix(5)
+                            print("Diagnostic SOT top logits: \(top.map { "\($0.0):\($0.1):\(tokenizer.decode(tokens: [$0.0]))" })")
+                        }
+                        if let key = predicted?.cache?.keyCache { printDiagnosticTensor(key, name: "key-output") }
+                        if let value = predicted?.cache?.valueCache { printDiagnosticTensor(value, name: "value-output") }
+                    }
+                }
+            }
+        }
 
         if cliArguments.verbose {
             print("\nModel initialization complete:")
@@ -244,11 +279,20 @@ struct TranscribeCLI: AsyncParsableCommand {
         }
 
         // Start the transcription
-        let transcribeResult: [Result<[TranscriptionResult], Swift.Error>] = await whisperKit.transcribeWithResults(
-            audioPaths: resolvedAudioPaths,
-            audioInputOptions: audioInputOptions,
-            decodeOptions: options
-        )
+        let transcribeResult: [Result<[TranscriptionResult], Swift.Error>]
+        if cliArguments.tensorCpuOnly {
+            if #available(macOS 15, iOS 18, *) {
+                transcribeResult = await withMLTensorComputePolicy(.cpuOnly) {
+                    await whisperKit.transcribeWithResults(audioPaths: resolvedAudioPaths,
+                        audioInputOptions: audioInputOptions, decodeOptions: options)
+                }
+            } else {
+                throw ValidationError("CPU-only tensor diagnosis requires macOS 15 or later")
+            }
+        } else {
+            transcribeResult = await whisperKit.transcribeWithResults(audioPaths: resolvedAudioPaths,
+                audioInputOptions: audioInputOptions, decodeOptions: options)
+        }
 
         if cliArguments.verbose {
             // Indicate that transcription is done
@@ -301,6 +345,13 @@ struct TranscribeCLI: AsyncParsableCommand {
                 }
             }
         }
+    }
+
+    private func printDiagnosticTensor(_ tensor: MLMultiArray, name: String) {
+        let indices = stride(from: 0, to: tensor.count, by: max(1, tensor.count / 4096))
+        let values = indices.map { tensor[$0].doubleValue }
+        let finite = values.filter { $0.isFinite }
+        print("Diagnostic \(name): shape=\(tensor.shape), dtype=\(tensor.dataType.rawValue), strides=\(tensor.strides), sampled=\(values.count), finite=\(finite.count), min=\(finite.min() ?? .nan), max=\(finite.max() ?? .nan), rms=\(sqrt(finite.reduce(0) { $0 + $1 * $1 } / Double(max(1, finite.count))))")
     }
 
     private func transcribeStream() async throws {

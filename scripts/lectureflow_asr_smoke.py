@@ -197,12 +197,14 @@ def run(args, report, repo, output):
                 report_dir.mkdir()
                 argv = [cli, "transcribe", "--audio-path", submitted, "--language", language, "--task", "transcribe", "--skip-special-tokens",
                         "--word-timestamps", "--report", "--report-path", report_dir, "--download-tokenizer-path", cache / "tokenizers",
-                        "--verbose", "--use-prefill-prompt", "--temperature-fallback-count", "1", "--concurrent-worker-count", "1",
+                        "--verbose", "--diagnostic-tensors", "--use-prefill-prompt", "--temperature-fallback-count", "1", "--concurrent-worker-count", "1",
                         "--chunking-strategy", "none", "--first-token-log-prob-threshold=-1.5",
                         "--mel-compute-units", args.compute_units,
                         "--audio-encoder-compute-units", args.compute_units, "--text-decoder-compute-units", args.compute_units]
                 if model_path is not None and not valid_model_folder(model_path):
                     model_path = None
+                if args.compute_units == "cpuOnly":
+                    argv.append("--tensor-cpu-only")
                 if model_path:
                     argv += ["--model-path", model_path]
                 else:
@@ -264,6 +266,7 @@ def main():
     report["expected_case_count"] = len(report["requested_languages"]) * 2
     report["coverage"] = "diagnostic_language_subset" if args.language_only else "full_english_chinese_clear_low"
     report["compute_units"] = {"mel": args.compute_units, "audio_encoder": args.compute_units, "text_decoder": args.compute_units}
+    report["tensor_compute_policy"] = "cpuOnly" if args.compute_units == "cpuOnly" else "default"
     report["decoding_configuration"] = {"verbose": True, "temperature_fallback_count": 1, "concurrent_worker_count": 1,
                                         "chunking_strategy": "none", "use_prefill_prompt": True, "word_timestamps": True,
                                         "first_token_log_prob_threshold": -1.5,
@@ -280,6 +283,7 @@ def main():
             "scripts/LectureFlowASRTransform.swift",
             "Sources/ArgmaxCLI/TranscribeCLIArguments.swift",
             "Sources/ArgmaxCLI/TranscribeCLIUtils.swift",
+            "Sources/ArgmaxCLI/TranscribeCLI.swift",
             "Sources/WhisperKit/Core/Text/TokenSampler.swift",
         ]
         report["source_sha256"] = {relative: sha256(repo / relative) for relative in evidence_sources}
