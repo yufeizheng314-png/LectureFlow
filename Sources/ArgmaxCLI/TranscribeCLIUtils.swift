@@ -20,6 +20,7 @@ internal class TranscribeCLIUtils {
         }
 
         let computeOptions = ModelComputeOptions(
+            melCompute: arguments.melComputeUnits.asMLComputeUnits,
             audioEncoderCompute: audioEncoderComputeUnits,
             textDecoderCompute: textDecoderComputeUnits
         )

@@ -7,6 +7,15 @@ on:
         description: Run the synthetic local multilingual model checks
         type: boolean
         default: true
+      asr_only:
+        description: Diagnose only the real ASR pipeline; do not build an IPA
+        type: boolean
+        default: false
+      asr_compute_units:
+        description: Core ML runtime for synthetic ASR checks on the Mac runner
+        type: choice
+        options: [cpuOnly, cpuAndGPU, cpuAndNeuralEngine]
+        default: cpuAndGPU
   push:
     branches: ["lectureflow/**"]
 
@@ -14,11 +23,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}
+  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_compute_units }}
   cancel-in-progress: false
 
 jobs:
   validate-and-build:
+    if: ${{ !inputs.asr_only }}
     runs-on: macos-15
     timeout-minutes: 60
     defaults:
@@ -62,6 +72,11 @@ jobs:
         run: |
           set -o pipefail
           swift test --disable-automatic-resolution --filter AudioStreamTranscriberTests 2>&1 | tee build/logs/upstream-stream-tests.log
+      - name: Fallback token sampling regression checks
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          swift test --disable-automatic-resolution --filter TokenSamplerFallbackTests 2>&1 | tee build/logs/token-sampler-tests.log
       - name: Resolve pinned local package for iPad
         if: ${{ !cancelled() }}
         run: |
@@ -142,7 +157,7 @@ jobs:
         timeout-minutes: 25
         run: |
           set -o pipefail
-          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke 2>&1 | tee build/logs/asr-smoke-terminal.log
+          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "${{ inputs.asr_compute_units || 'cpuAndGPU' }}" 2>&1 | tee build/logs/asr-smoke-terminal.log
       - name: Preserve IPA, source verification and all build logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -156,4 +171,39 @@ jobs:
             build/ui-feature-screenshots/
             build/ui-feature-tests.xcresult/
           if-no-files-found: error
+          retention-days: 30
+
+  diagnose-asr:
+    if: ${{ inputs.asr_only }}
+    runs-on: macos-15
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Record diagnostic source and tools
+        run: |
+          mkdir -p build/logs
+          { git rev-parse HEAD; sw_vers; uname -m; swift --version; } | tee build/logs/toolchain.log
+      - name: Current fallback sampling regression
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          swift test --disable-automatic-resolution --filter TokenSamplerFallbackTests 2>&1 | tee build/logs/token-sampler-tests.log
+      - name: Actual bilingual clear and low-volume inference
+        if: ${{ !cancelled() }}
+        env:
+          COMPUTE_UNITS: ${{ inputs.asr_compute_units }}
+        run: |
+          set -o pipefail
+          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "$COMPUTE_UNITS" | tee build/logs/asr-smoke.log
+      - name: Retain actual diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: LectureFlow-ASR-diagnostic-${{ github.sha }}-${{ inputs.asr_compute_units }}
+          path: |
+            build/logs
+            build/asr-smoke
           retention-days: 30

@@ -28,6 +28,9 @@ struct TranscribeCLIArguments: ParsableArguments {
     @Option(name: .long, help: "HuggingFace Hub compatible endpoint URL")
     var endpoint: String?
 
+    @Option(help: "Compute units for mel spectrogram model with {all,cpuOnly,cpuAndGPU,cpuAndNeuralEngine,random}; CPU-only is useful on virtualized Macs")
+    var melComputeUnits: ComputeUnits = .cpuAndGPU
+
     @Option(help: "Compute units for audio encoder model with {all,cpuOnly,cpuAndGPU,cpuAndNeuralEngine,random}")
     var audioEncoderComputeUnits: ComputeUnits = .cpuAndNeuralEngine
 

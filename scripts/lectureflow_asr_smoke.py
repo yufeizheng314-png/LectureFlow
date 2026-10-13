@@ -134,7 +134,7 @@ def run(args, report, repo, output):
         raise RuntimeError("Blocked: macOS say, afconvert and Core ML are required")
     voices = installed_voices()
     report["available_voices"] = voices
-    selected = {language: choose_voice(voices, language) for language in CASES}
+    selected = {language: choose_voice(voices, language) for language in report["requested_languages"]}
     report["selected_voices"] = selected
     for language, voice in selected.items():
         if voice is None:
@@ -160,7 +160,8 @@ def run(args, report, repo, output):
     model_path = args.model_path.resolve() if args.model_path else None
     if model_path and (not valid_model_folder(model_path) or "base.en" in model_path.name or "base" not in model_path.name):
         raise RuntimeError("Blocked: --model-path must contain complete multilingual base Core ML models, not metadata or base.en")
-    for language, fixture in CASES.items():
+    for language in report["requested_languages"]:
+        fixture = CASES[language]
         voice = selected[language]
         if voice is None:
             continue
@@ -196,7 +197,10 @@ def run(args, report, repo, output):
                 report_dir.mkdir()
                 argv = [cli, "transcribe", "--audio-path", submitted, "--language", language, "--task", "transcribe", "--skip-special-tokens",
                         "--word-timestamps", "--report", "--report-path", report_dir, "--download-tokenizer-path", cache / "tokenizers",
-                        "--audio-encoder-compute-units", "cpuAndGPU", "--text-decoder-compute-units", "cpuAndGPU"]
+                        "--verbose", "--use-prefill-prompt", "--temperature-fallback-count", "1", "--concurrent-worker-count", "1",
+                        "--chunking-strategy", "none", "--first-token-log-prob-threshold", "-1.5",
+                        "--mel-compute-units", args.compute_units,
+                        "--audio-encoder-compute-units", args.compute_units, "--text-decoder-compute-units", args.compute_units]
                 if model_path is not None and not valid_model_folder(model_path):
                     model_path = None
                 if model_path:
@@ -238,6 +242,9 @@ def main():
     parser.add_argument("--cache", type=Path, default=repo / ".build/lectureflow-asr-cache")
     parser.add_argument("--cli", type=Path, help="An already-built repository whisperkit-cli executable")
     parser.add_argument("--model-path", type=Path, help="An existing multilingual openai_whisper-base folder")
+    parser.add_argument("--compute-units", choices=("cpuOnly", "cpuAndGPU", "cpuAndNeuralEngine"), default="cpuAndGPU",
+                        help="Use the same compute units for mel, audio encoder and text decoder; recorded as off-device diagnostic configuration")
+    parser.add_argument("--language-only", choices=("en", "zh"), help="Diagnostic subset: this language's clear/low cases only; the default still requires all four cases")
     parser.add_argument("--low-db", type=float, default=-24.0)
     parser.add_argument("--min-keyword-hits", type=int, choices=range(2, 5), default=2)
     parser.add_argument("--build-timeout", type=int, default=900)
@@ -253,6 +260,14 @@ def main():
     report = {"synthetic": True, "off_device": True, "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "model": "multilingual openai_whisper-base", "minimum_keyword_hits": args.min_keyword_hits, "cases": [],
               "scope": "Real repository CLI inference on local system-synthesized speech. Low copies use production normalization and PCM store in bounded file windows. No microphone, teacher recording, iPad ownership/latency, cloud AI quality or device acceptance is tested."}
+    report["requested_languages"] = [args.language_only] if args.language_only else list(CASES)
+    report["expected_case_count"] = len(report["requested_languages"]) * 2
+    report["coverage"] = "diagnostic_language_subset" if args.language_only else "full_english_chinese_clear_low"
+    report["compute_units"] = {"mel": args.compute_units, "audio_encoder": args.compute_units, "text_decoder": args.compute_units}
+    report["decoding_configuration"] = {"verbose": True, "temperature_fallback_count": 1, "concurrent_worker_count": 1,
+                                        "chunking_strategy": "none", "use_prefill_prompt": True, "word_timestamps": True,
+                                        "first_token_log_prob_threshold": -1.5,
+                                        "parity_limit": "CLI full-file test; production sampleLength=224 and windowClipTime=0 are not CLI options. This does not test microphone window ownership."}
     try:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, timeout=10, check=True)
         report["source_commit"] = commit.stdout.strip()
@@ -263,21 +278,24 @@ def main():
             "Examples/WhisperAX/WhisperAX/LectureFlow/LectureFlowModel.swift",
             "scripts/lectureflow_asr_smoke.py",
             "scripts/LectureFlowASRTransform.swift",
+            "Sources/ArgmaxCLI/TranscribeCLIArguments.swift",
+            "Sources/ArgmaxCLI/TranscribeCLIUtils.swift",
         ]
         report["source_sha256"] = {relative: sha256(repo / relative) for relative in evidence_sources}
         run(args, report, repo, output)
     except (OSError, ValueError, subprocess.SubprocessError, RuntimeError) as error:
         report["infrastructure_error"] = str(error)
     recorded = {(case["language"], case["volume"]) for case in report["cases"]}
-    for language in CASES:
+    for language in report["requested_languages"]:
         for volume in ("clear", "low"):
             if (language, volume) not in recorded:
                 report["cases"].append({"language": language, "volume": volume, "status": "blocked", "reason": "Not executed because preceding setup was blocked"})
     statuses = [case["status"] for case in report["cases"]]
-    report["status"] = "passed" if len(statuses) == 4 and all(status == "passed" for status in statuses) and "infrastructure_error" not in report else "failed" if "failed" in statuses else "blocked"
+    report["status"] = "passed" if len(statuses) == report["expected_case_count"] and all(status == "passed" for status in statuses) and "infrastructure_error" not in report else "failed" if "failed" in statuses else "blocked"
     report["finished_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     (output / "ASR-SMOKE.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    lines = ["LectureFlow synthetic / off_device ASR smoke test", f"Status: {report['status']}", report["scope"], ""]
+    lines = ["LectureFlow synthetic / off_device ASR smoke test", f"Status: {report['status']}", f"Coverage: {report['coverage']} ({report['expected_case_count']} cases)",
+             "Compute units: " + json.dumps(report["compute_units"]), report["scope"], ""]
     for case in report["cases"]:
         lines += [f"{case['language']} / {case['volume']}: {case['status']}", f"Keyword hits: {case.get('keyword_hits', {})}",
                   "Actual transcription: " + case.get("transcript", "[no verified transcription]"), case.get("reason", ""), ""]
