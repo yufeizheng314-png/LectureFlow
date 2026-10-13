@@ -62,7 +62,9 @@ enum LFVisualTextExport {
         return result
     }
 
-    private static func pair(_ text: LFKeyTerm) -> String { "\(text.english) / \(text.chinese)" }
+    private static func pair(_ text: LFKeyTerm) -> String {
+        text.english == text.chinese ? text.english : "\(text.english) / \(text.chinese)"
+    }
 
     private static func grid(headers: [String], rows: [[String]], markdown: Bool) -> String {
         if markdown {

@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_controls }}-${{ inputs.asr_export_encoder }}-${{ inputs.asr_compute_units }}
+  group: lectureflow-${{ github.ref }}-${{ github.sha }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_controls }}-${{ inputs.asr_export_encoder }}-${{ inputs.asr_compute_units }}
   cancel-in-progress: false
 
 jobs:

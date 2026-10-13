@@ -55,16 +55,34 @@ private struct LFVisualIllustration: View {
     let block: LFVisualBlock
     let sourceDescription: String
     var maximumPixels: CGFloat = 4_000_000
+    var viewport: CGSize? = nil
+    var fitsWidth = false
+    var zoom: CGFloat = 1
     @State private var image: UIImage?
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image).resizable().scaledToFit()
-                    .accessibilityLabel("\(block.kind.displayName)：\(block.title.chinese)，\(block.title.english)")
-                    .accessibilityIdentifier("lectureflow.visual.image.\(block.id)")
+                if let viewport {
+                    let availableWidth = max(1, viewport.width - 32)
+                    let availableHeight = max(1, viewport.height - 32)
+                    let widthScale = availableWidth / image.size.width
+                    let fitScale = min(widthScale, availableHeight / image.size.height)
+                    let scale = (fitsWidth ? widthScale : fitScale) * zoom
+                    let displayed = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+                    artwork(image)
+                        .frame(width: displayed.width, height: displayed.height)
+                        .padding(16)
+                        .frame(width: max(viewport.width, displayed.width + 32),
+                               height: max(viewport.height, displayed.height + 32), alignment: .center)
+                } else { artwork(image) }
             } else { ProgressView("绘制图文笔记…") }
         }
         .task(id: block) { image = LFVisualRenderer.image(for: block, sourceDescription: sourceDescription, maximumPixels: maximumPixels) }
+    }
+    private func artwork(_ image: UIImage) -> some View {
+        Image(uiImage: image).resizable().scaledToFit()
+            .accessibilityLabel("\(block.kind.displayName)：\(block.title.chinese)，\(block.title.english)")
+            .accessibilityIdentifier("lectureflow.visual.image.\(block.id)")
     }
 }
 
@@ -75,6 +93,7 @@ struct LFVisualNotesGallery: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedID = ""
     @State private var zoom: CGFloat = 1
+    @State private var fitsWidth = false
     @State private var showingData = false
     @State private var document: LFVisualShareDocument?
     private var selected: LFVisualBlock? { blocks.first { $0.id == selectedID } ?? blocks.first }
@@ -93,15 +112,23 @@ struct LFVisualNotesGallery: View {
                         .font(.caption.monospacedDigit()).accessibilityIdentifier("lectureflow.visual.zoom")
                     Button { zoom = min(2.5, zoom + 0.25) } label: { Image(systemName: "plus.magnifyingglass") }
                         .accessibilityLabel("放大图表")
-                    Button("适合屏幕") { zoom = 1 }
+                    Button("适合屏幕") { fitsWidth = false; zoom = 1 }
+                        .accessibilityIdentifier("lectureflow.visual.fit.screen")
+                    Button("按宽度") { fitsWidth = true; zoom = 1 }
+                        .accessibilityIdentifier("lectureflow.visual.fit.width")
+                        .accessibilityValue(fitsWidth ? "已选择" : "未选择")
                 }.padding(.horizontal)
                 if let selected {
                     GeometryReader { geometry in
                         ScrollView([.horizontal, .vertical]) {
-                            LFVisualIllustration(block: selected, sourceDescription: LFVisualRenderer.sources(selected, segments: model.lesson?.segments ?? []))
-                                .frame(width: max(320, geometry.size.width - 32) * zoom)
-                                .padding(16)
+                            LFVisualIllustration(block: selected,
+                                sourceDescription: LFVisualRenderer.sources(selected, segments: model.lesson?.segments ?? []),
+                                viewport: geometry.size, fitsWidth: fitsWidth, zoom: zoom)
                         }
+                        // Recreate the viewport when switching fit modes so a
+                        // long table opens at its heading, not an old scroll offset.
+                        .id(selected.id + (fitsWidth ? "-width" : "-screen"))
+                        .accessibilityIdentifier("lectureflow.visual.canvas")
                         .background(Color(uiColor: .systemGray6))
                     }
                     HStack {
@@ -128,7 +155,7 @@ struct LFVisualNotesGallery: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
         .onAppear { selectedID = initialID ?? blocks.first?.id ?? "" }
-        .onChange(of: selectedID) { _, _ in zoom = 1 }
+        .onChange(of: selectedID) { _, _ in zoom = 1; fitsWidth = false }
         .onChange(of: model.exportURL) { _, url in
             if let url { document = LFVisualShareDocument(url: url) }
         }
@@ -222,7 +249,10 @@ private struct LFVisualDataView: View {
         }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
     }
     private func pair(_ value: LFKeyTerm, font: Font = .body) -> some View {
-        VStack(alignment: .leading, spacing: 5) { Text(value.chinese); Text(value.english).foregroundStyle(.secondary) }.font(font)
+        VStack(alignment: .leading, spacing: 5) {
+            Text(value.chinese)
+            if value.english != value.chinese { Text(value.english).foregroundStyle(.secondary) }
+        }.font(font)
     }
 }
 
@@ -307,7 +337,9 @@ enum LFVisualRenderer {
         let encoded = String(number)
         return encoded.hasSuffix(".0") ? String(encoded.dropLast(2)) : encoded
     }
-    private static func bilingual(_ value: LFKeyTerm) -> String { value.chinese + "\n" + value.english }
+    private static func bilingual(_ value: LFKeyTerm) -> String {
+        value.chinese == value.english ? value.chinese : value.chinese + "\n" + value.english
+    }
     private static func attributes(_ size: CGFloat, bold: Bool = false, color: UIColor? = nil) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 4
         paragraph.lineBreakMode = .byWordWrapping

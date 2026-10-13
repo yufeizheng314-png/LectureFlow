@@ -136,6 +136,25 @@ final class LectureFlowFeatureUITests: XCTestCase {
             print("VISUAL_UI_CHECK PASS rendered+details \(id)")
         }
         selectVisual(app, id: "econ-long-table", title: "计量统计概念长表")
+        let canvas = app.scrollViews["lectureflow.visual.canvas"]
+        let longImage = canvas.descendants(matching: .any)["lectureflow.visual.image.econ-long-table"]
+        let wholeTableWidth = longImage.frame.width
+        let widthFit = app.buttons["lectureflow.visual.fit.width"]
+        waitForHittable(widthFit, "The long table must offer a readable width-based view")
+        widthFit.tap()
+        let wider = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            longImage.exists && longImage.frame.width > wholeTableWidth + 10
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [wider], timeout: 10), .completed,
+                       "Width mode must actually enlarge the long table image")
+        XCTAssertLessThanOrEqual(longImage.frame.width, canvas.frame.width + 2,
+                                 "Width mode must keep the complete table width in the viewport")
+        keepScreenshot(app, named: "Long table readable width mode")
+        let screenFit = app.buttons["lectureflow.visual.fit.screen"]
+        waitForHittable(screenFit, "The long table must return from width mode to a complete overview")
+        screenFit.tap()
+        waitForLabel(app.staticTexts["lectureflow.visual.zoom"], equalTo: "100%")
+        verifyVisualFitsCanvas(app, id: "econ-long-table")
         keepScreenshot(app, named: "Twelve-row six-column economics comparison table")
         verifyLongTableEnds(app)
         print("VISUAL_UI_CHECK PASS rendered+details econ-long-table")
@@ -209,6 +228,29 @@ final class LectureFlowFeatureUITests: XCTestCase {
         let visual = app.descendants(matching: .any)["lectureflow.visual.image.\(id)"]
         XCTAssertTrue(visual.waitForExistence(timeout: 10), "Selecting a visual must present its rendered image, not only a title")
         XCTAssertTrue(visual.label.contains(title), "The rendered visual must expose its matching bilingual title")
+        verifyVisualFitsCanvas(app, id: id)
+    }
+
+    @MainActor
+    private func verifyVisualFitsCanvas(_ app: XCUIApplication, id: String) {
+        let canvas = app.scrollViews["lectureflow.visual.canvas"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+        let image = canvas.descendants(matching: .any)["lectureflow.visual.image.\(id)"]
+        XCTAssertTrue(image.waitForExistence(timeout: 10))
+        let fits = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let viewport = canvas.frame
+            let artwork = image.frame
+            return viewport.width > 0 && viewport.height > 0 && artwork.width > 0 && artwork.height > 0
+                && viewport.insetBy(dx: -2, dy: -2).contains(artwork)
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [fits], timeout: 10)
+        if result != .completed {
+            keepScreenshot(app, named: "Visual fit failure \(id)")
+            print("VISUAL_UI_DIAGNOSTIC \(id) image=\(image.frame) canvas=\(canvas.frame)")
+        }
+        XCTAssertEqual(result, .completed,
+                       "Fit-to-screen must place all four image edges inside the gallery viewport, including the bottom legend")
+        print("VISUAL_UI_CHECK PASS complete-image-fits-canvas \(id)")
     }
 
     @MainActor
