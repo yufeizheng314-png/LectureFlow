@@ -11,6 +11,10 @@ on:
         description: Diagnose only the real ASR pipeline; do not build an IPA
         type: boolean
         default: false
+      asr_controls:
+        description: In ASR-only mode, compare JFK and natural English with and without timestamps
+        type: boolean
+        default: false
       asr_compute_units:
         description: Core ML runtime for synthetic ASR checks on the Mac runner
         type: choice
@@ -23,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_compute_units }}
+  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}-${{ inputs.asr_only }}-${{ inputs.asr_controls }}-${{ inputs.asr_compute_units }}
   cancel-in-progress: false
 
 jobs:
@@ -192,12 +196,19 @@ jobs:
           set -o pipefail
           swift test --disable-automatic-resolution --filter TokenSamplerFallbackTests 2>&1 | tee build/logs/token-sampler-tests.log
       - name: Actual bilingual clear and low-volume inference
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.asr_controls }}
         env:
           COMPUTE_UNITS: ${{ inputs.asr_compute_units }}
         run: |
           set -o pipefail
           python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "$COMPUTE_UNITS" | tee build/logs/asr-smoke.log
+      - name: Independent JFK and natural English timestamp controls
+        if: ${{ !cancelled() && inputs.asr_controls }}
+        env:
+          COMPUTE_UNITS: ${{ inputs.asr_compute_units }}
+        run: |
+          set -o pipefail
+          python3 scripts/lectureflow_asr_controls.py --output build/asr-controls --compute-units "$COMPUTE_UNITS" 2>&1 | tee build/logs/asr-controls.log
       - name: Retain actual diagnostic evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -206,4 +217,5 @@ jobs:
           path: |
             build/logs
             build/asr-smoke
+            build/asr-controls
           retention-days: 30

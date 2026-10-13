@@ -1,0 +1,49 @@
+name: LectureFlow independent ASR controls
+
+on:
+  workflow_dispatch:
+    inputs:
+      compute_units:
+        description: Core ML compute units; MLTensor keeps its default policy
+        type: choice
+        options: [cpuAndGPU, cpuOnly, cpuAndNeuralEngine]
+        default: cpuAndGPU
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lectureflow-asr-controls-${{ github.ref }}-${{ inputs.compute_units }}
+  cancel-in-progress: false
+
+jobs:
+  controls:
+    runs-on: macos-15
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - name: Record control source and tools
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          { git rev-parse HEAD; sw_vers; uname -m; swift --version; } | tee build/logs/toolchain.log
+      - name: JFK and natural English with and without timestamps
+        env:
+          COMPUTE_UNITS: ${{ inputs.compute_units }}
+        run: |
+          set -o pipefail
+          python3 scripts/lectureflow_asr_controls.py --output build/asr-controls \
+            --compute-units "$COMPUTE_UNITS" 2>&1 | tee build/logs/asr-controls.log
+      - name: Retain independent control evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: LectureFlow-ASR-controls-${{ github.sha }}-${{ inputs.compute_units }}
+          path: |
+            build/logs/
+            build/asr-controls/
+          if-no-files-found: error
+          retention-days: 30
