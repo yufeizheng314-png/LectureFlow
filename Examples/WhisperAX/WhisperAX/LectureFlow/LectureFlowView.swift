@@ -10,6 +10,7 @@ struct LectureFlowView: View {
     @State private var editingNote: LFNoteBlock?
     @State private var editingLessonID: UUID?
     @State private var sharedDocument: LectureShareDocument?
+    @State private var showingMindMap = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -23,7 +24,7 @@ struct LectureFlowView: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(lesson.title).font(.headline).foregroundStyle(.primary)
                                 Text(lesson.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                                Text("\(lesson.segments.count) 段英文 · \(lesson.notes.count) 组双语笔记")
+                                Text("\(lesson.segments.count) 段原文 · \(lesson.notes.count) 组双语笔记")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -40,7 +41,7 @@ struct LectureFlowView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("新课程", systemImage: "plus") {
-                        lessonTitle = "英文课堂 \(Date.now.formatted(date: .abbreviated, time: .shortened))"
+                        lessonTitle = "课堂 \(Date.now.formatted(date: .abbreviated, time: .shortened))"
                         showingNewLesson = true
                     }.disabled(!model.canChangeLesson)
                 }
@@ -70,7 +71,7 @@ struct LectureFlowView: View {
                                            description: Text("点击“新课程”，英文原音和转写保存在 iPad。"))
                 }
             }
-            .navigationTitle(model.lesson?.title ?? "英文课堂双语笔记")
+            .navigationTitle(model.lesson?.title ?? "课堂双语笔记")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("AI 设置", systemImage: "gearshape") { showingSettings = true }
@@ -87,6 +88,18 @@ struct LectureFlowView: View {
         }
         .task { await model.initialize() }
         .sheet(isPresented: $showingSettings) { LectureCloudSettings(model: model) }
+        .fullScreenCover(isPresented: $showingMindMap) {
+            if let lesson = model.lesson, let nodes = lesson.courseSummary?.mindMap {
+                NavigationStack {
+                    GeometryReader { geometry in
+                        LFNotesMapView(title: lesson.title, nodes: nodes,
+                                       viewportHeight: max(420, geometry.size.height - 110)).padding()
+                    }
+                        .navigationTitle("课堂思维导图")
+                        .toolbar { Button("完成") { showingMindMap = false } }
+                }
+            }
+        }
         .sheet(item: $editingNote) { note in
             if let lessonID = editingLessonID { LectureNoteEditor(model: model, note: note, lessonID: lessonID) }
         }
@@ -129,10 +142,18 @@ struct LectureFlowView: View {
                 }
             }
             HStack {
+                Picker("课堂语言", selection: Binding(
+                    get: { model.lectureLanguage },
+                    set: { language in Task { await model.setLectureLanguage(language) } }
+                )) {
+                    Text("英文课").tag(LFLectureLanguage.english)
+                    Text("中文课").tag(LFLectureLanguage.chinese)
+                }.pickerStyle(.segmented).frame(width: 180)
+                    .disabled(model.lesson == nil || model.hasCapture || model.busy || model.preparingModel)
                 Text(model.modelStatus).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if !model.modelReady {
-                    Button(model.preparingModel ? "准备中…" : "准备英文模型") {
+                    Button(model.preparingModel ? "准备中…" : "准备课堂模型") {
                         Task { await model.prepareModel() }
                     }.disabled(model.preparingModel || model.hasCapture)
                 }
@@ -162,8 +183,8 @@ struct LectureFlowView: View {
                     .disabled(!model.autoNotesEnabled || model.generatingNotes || model.lesson?.segments.isEmpty != false)
             }
             Text(model.autoNotesEnabled
-                 ? "仅将已确认英文和已有笔记发送到你配置的服务；原音保留在本机。"
-                 : "AI 未启用。录音和英文转写正常保存；启用前请设置服务和个人 Key。")
+                 ? "将课程标题、确认原文和已有笔记发送到你配置的服务；原音保留在本机。"
+                 : "AI 未启用。录音和原文正常保存；启用前请设置服务和个人 Key。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
@@ -184,8 +205,8 @@ struct LectureFlowView: View {
 
     private func transcript(_ lesson: LFLesson) -> some View {
         LazyVStack(alignment: .leading, spacing: 16) {
-            Text("英文实时转写").font(.title2.bold())
-            Text("tiny.en 是英文模型；专业术语和混合语言需核对原音。")
+            Text(lesson.effectiveLanguage == .chinese ? "中文实时转写" : "英文实时转写").font(.title2.bold())
+            Text("按课堂语言识别。点时间可回听原音，专业术语可结合前后文核对。")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(lesson.segments) { segment in
                 VStack(alignment: .leading, spacing: 6) {
@@ -203,7 +224,7 @@ struct LectureFlowView: View {
                 }
             }
             if lesson.segments.isEmpty && !model.hasCapture {
-                Text("录音开始后，确认的英文片段会保存在这里。")
+                Text("录音开始后，确认的课堂原文会保存在这里。")
                     .foregroundStyle(.secondary)
             }
             if !lesson.audioFiles.isEmpty {
@@ -228,7 +249,7 @@ struct LectureFlowView: View {
     private func notes(_ lesson: LFLesson) -> some View {
         LazyVStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("课程梳理").font(.title2.bold())
+                Text("课堂笔记").font(.title2.bold())
                 Spacer()
                 Button("梳理整堂课") { Task { await model.rebuildCourseNotes() } }
                     .disabled(!model.autoNotesEnabled || model.generatingNotes || model.hasCapture || lesson.segments.isEmpty)
@@ -237,29 +258,30 @@ struct LectureFlowView: View {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
             if let summary = lesson.courseSummary {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("AI 累计梳理 · 请核对原文").font(.caption).foregroundStyle(.secondary)
-                    Text(summary.englishNotes).textSelection(.enabled)
-                    Divider()
-                    Text(summary.chineseNotes).textSelection(.enabled)
-                    if !summary.keyTerms.isEmpty {
-                        Text(summary.keyTerms.map { "\($0.english) — \($0.chinese)" }.joined(separator: "\n"))
-                            .font(.callout).foregroundStyle(.secondary)
+                if let nodes = summary.mindMap, !nodes.isEmpty {
+                    HStack {
+                        Text("中英思维导图").font(.headline)
+                        Spacer()
+                        Button("全屏") { showingMindMap = true }
                     }
-                    if let through = lesson.courseSummaryThrough {
-                        Text("梳理到：" + clock(through)).font(.caption).foregroundStyle(.secondary)
-                    }
+                    LFNotesMapView(title: lesson.title, nodes: nodes)
+                    DisclosureGroup("双语详细笔记") { summaryText(summary) }
+                } else {
+                    summaryText(summary)
+                    Text("点击“梳理整堂课”生成课程思维导图。").font(.caption).foregroundStyle(.secondary)
                 }
-                .padding().background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                if let through = lesson.courseSummaryThrough {
+                    Text("梳理到：" + clock(through)).font(.caption).foregroundStyle(.secondary)
+                }
             } else if !lesson.notes.isEmpty {
-                Text("点击“梳理整堂课”，将已保存的英文串成课程主线。原有过程笔记和手动编辑会保留。")
+                Text("点击“梳理整堂课”，将已保存的原文串成课程主线和思维导图。原有过程笔记和手动编辑会保留。")
                     .font(.callout).foregroundStyle(.secondary)
             }
             DisclosureGroup("过程笔记 · \(lesson.notes.count) 组") {
             ForEach(lesson.notes) { note in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text(note.isEdited ? "已手动编辑" : "AI 笔记 · 请核对").font(.caption).foregroundStyle(.secondary)
+                        Text(note.isEdited ? "已手动编辑" : "课堂要点").font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button("编辑") { editingLessonID = lesson.id; editingNote = note }
                     }
@@ -278,10 +300,23 @@ struct LectureFlowView: View {
             }
             }
             if lesson.notes.isEmpty {
-                Text("启用 AI 后，AI 会结合前文持续更新双语课程梳理。暂停保存后可用“梳理整堂课”重新整理已有英文。网络失败会保留原文和已有笔记。")
+                Text("启用 AI 后，思维导图与双语笔记随课堂内容持续更新。暂停后可用“梳理整堂课”整理已有原文。网络失败会保留原文和已有笔记。")
                     .foregroundStyle(.secondary)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func summaryText(_ summary: LFNotesSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(summary.englishNotes).textSelection(.enabled)
+            Divider()
+            Text(summary.chineseNotes).textSelection(.enabled)
+            if !summary.keyTerms.isEmpty {
+                Text(summary.keyTerms.map { "\($0.english) — \($0.chinese)" }.joined(separator: "\n"))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .padding().background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func clock(_ seconds: Double) -> String {

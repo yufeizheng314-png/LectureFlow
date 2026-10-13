@@ -37,16 +37,17 @@ final class LectureAudioSession: ObservableObject {
     private var asrFailure: String?
     private var terminalFailure: String?
     private var interrupted = false
+    private var decodingLanguage = "en"
 
-    func start(using whisper: WhisperKit, outputURL: URL, baseOffset: Double = 0) async throws {
+    func start(using whisper: WhisperKit, outputURL: URL, baseOffset: Double = 0, language: String = "en") async throws {
         guard !isBusy else { throw LectureAudioError.message("请先结束当前录音和尾部识别。") }
-        guard whisper.modelState == .loaded, whisper.tokenizer != nil else {
-            throw LectureAudioError.message("请先准备英语模型 tiny.en；模型尚未成功加载。")
-        }
+        let selectedLanguage = try LectureDecodingLanguage.validate(language)
+        try validateModel(whisper, language: selectedLanguage)
         guard baseOffset.isFinite, baseOffset >= 0, outputURL.isFileURL else {
             throw LectureAudioError.message("无效的课程录音位置或时间偏移。")
         }
         reset()
+        decodingLanguage = selectedLanguage
         state = .starting
         let generation = runID
         guard await AudioProcessor.requestRecordPermission() else {
@@ -65,7 +66,7 @@ final class LectureAudioSession: ObservableObject {
             }
             recordingURL = outputURL
             checkpoint = LectureAudioCheckpoint(recordingID: outputURL.deletingPathExtension().lastPathComponent, baseOffset: baseOffset,
-                committedFrames: 0, segments: [], captureClosed: false, interrupted: false)
+                committedFrames: 0, segments: [], captureClosed: false, interrupted: false, language: selectedLanguage)
             try saveCheckpoint()
             let recorder = try LectureAudioCapture(url: outputURL) { [weak self] message in
                 Task { @MainActor [weak self] in
@@ -118,18 +119,18 @@ final class LectureAudioSession: ObservableObject {
 
     /// Replays only uncommitted audio from a prior interrupted/failed recording.
     /// Does not reopen the microphone or append to an old WAV.
-    func recover(recordingURL url: URL, using whisper: WhisperKit) async throws {
-        try await resumeTranscription(using: whisper, from: url, baseOffset: nil)
+    func recover(recordingURL url: URL, using whisper: WhisperKit, language: String = "en") async throws {
+        try await resumeTranscription(using: whisper, from: url, baseOffset: nil, language: language)
     }
 
-    func resumeTranscription(using whisper: WhisperKit, from url: URL, baseOffset: Double) async throws {
-        try await resumeTranscription(using: whisper, from: url, baseOffset: Optional(baseOffset))
+    func resumeTranscription(using whisper: WhisperKit, from url: URL, baseOffset: Double, language: String = "en") async throws {
+        try await resumeTranscription(using: whisper, from: url, baseOffset: Optional(baseOffset), language: language)
     }
 
-    private func resumeTranscription(using whisper: WhisperKit, from url: URL, baseOffset: Double?) async throws {
+    private func resumeTranscription(using whisper: WhisperKit, from url: URL, baseOffset: Double?, language: String) async throws {
         guard !isBusy else { throw LectureAudioError.message("请先结束当前录音。") }
         guard whisper.modelState == .loaded, whisper.tokenizer != nil else {
-            throw LectureAudioError.message("请先成功加载英语模型。")
+            throw LectureAudioError.message("请先成功加载转写模型。")
         }
         var saved: LectureAudioCheckpoint
         if FileManager.default.fileExists(atPath: checkpointURL(for: url).path) {
@@ -145,14 +146,18 @@ final class LectureAudioSession: ObservableObject {
             saved = LectureAudioCheckpoint(recordingID: url.deletingPathExtension().lastPathComponent,
                 baseOffset: baseOffset, committedFrames: 0, segments: [], captureClosed: true, interrupted: true)
         }
+        let selectedLanguage = try saved.languageForRecovery(fallback: language)
+        try validateModel(whisper, language: selectedLanguage)
         let frames = try LecturePCMStore.repairClosedFile(at: url)
         guard saved.committedFrames >= 0, saved.committedFrames <= frames,
               saved.baseOffset.isFinite, saved.baseOffset >= 0, !saved.recordingID.isEmpty else {
             throw LectureAudioError.message("录音检查点与原音不一致，未覆盖已有文字。")
         }
         reset()
+        decodingLanguage = selectedLanguage
         recordingURL = url
         saved.captureClosed = true
+        saved.language = selectedLanguage
         checkpoint = saved
         closedFrames = frames
         confirmedSegments = saved.segments
@@ -176,6 +181,7 @@ final class LectureAudioSession: ObservableObject {
         asrFailure = nil
         terminalFailure = nil
         interrupted = false
+        decodingLanguage = "en"
         errorMessage = nil
         partialText = ""
         partialSegments = []
@@ -183,6 +189,19 @@ final class LectureAudioSession: ObservableObject {
         recordedDuration = 0
         transcribedThrough = 0
         recordingURL = nil
+    }
+
+    private func validateModel(_ whisper: WhisperKit, language: String) throws {
+        guard whisper.modelState == .loaded, let tokenizer = whisper.tokenizer else {
+            throw LectureAudioError.message("请先准备转写模型；模型尚未成功加载。")
+        }
+        if language == "zh" {
+            guard whisper.textDecoder.isModelMultilingual,
+                  let token = tokenizer.convertTokenToId("<|zh|>"),
+                  tokenizer.allLanguageTokens.contains(token) else {
+                throw LectureAudioError.message("中文转写需要支持中文的多语言模型，请重新准备模型。")
+            }
+        }
     }
 
     private func closeAndDrain() async {
@@ -244,20 +263,26 @@ final class LectureAudioSession: ObservableObject {
             }
             do {
                 let samples = try LecturePCMStore.read(url: url, from: window.readStart, through: window.readEnd)
-                let options = DecodingOptions(verbose: false, task: .transcribe, language: "en",
-                    temperatureFallbackCount: 1, sampleLength: 224, usePrefillPrompt: true,
-                    detectLanguage: false, skipSpecialTokens: true, withoutTimestamps: false,
-                    wordTimestamps: true, windowClipTime: 0, concurrentWorkerCount: 1)
-                let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
+                let input = try LectureAudioNormalization.prepareForInference(samples)
+                var words: [LectureRecognizedWord] = []
+                if input.aboveNoiseFloor {
+                    let options = DecodingOptions(verbose: false, task: .transcribe, language: decodingLanguage,
+                        temperatureFallbackCount: 1, sampleLength: 224, usePrefillPrompt: true,
+                        detectLanguage: false, skipSpecialTokens: true, withoutTimestamps: false,
+                        wordTimestamps: true, windowClipTime: 0, concurrentWorkerCount: 1)
+                    let results = try await whisper.transcribe(audioArray: input.samples, decodeOptions: options)
+                    guard runID == generation else { return }
+                    let segments = results.flatMap(\.segments)
+                    // Chinese uses WhisperKit's Unicode-token alignment, not spaces.
+                    // Missing timings must not silently discard a crossing segment.
+                    if segments.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && ($0.words?.isEmpty ?? true) }) {
+                        throw LectureAudioError.message("识别未返回逐词时间戳；原音保留，稍后可重新识别。")
+                    }
+                    words = segments.flatMap { $0.words ?? [] }.map {
+                        LectureRecognizedWord(start: Double($0.start), end: Double($0.end), text: $0.word)
+                    }
+                }
                 guard runID == generation else { return }
-                let segments = results.flatMap(\.segments)
-                // Missing word timings must not silently discard a long crossing segment.
-                if segments.contains(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && ($0.words?.isEmpty ?? true) }) {
-                    throw LectureAudioError.message("识别未返回逐词时间戳；原音保留，稍后可重新识别。")
-                }
-                let words = segments.flatMap { $0.words ?? [] }.map {
-                    LectureRecognizedWord(start: Double($0.start), end: Double($0.end), text: $0.word)
-                }
                 let segment = LectureAudioWindowing.segment(words: words, window: window,
                     recordingID: saved.recordingID, baseOffset: saved.baseOffset)
                 lastReadEnd = window.readEnd

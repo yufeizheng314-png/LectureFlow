@@ -80,17 +80,17 @@ jobs:
           set -o pipefail
           mkdir -p build/package/Payload
           ditto build/DerivedData/Build/Products/Release-iphoneos/LectureFlow.app build/package/Payload/LectureFlow.app
-          (cd build/package && zip -qry ../delivery/LectureFlow-0.1.1-build2-unsigned.ipa Payload)
-          python3 scripts/lectureflow_validate.py --ipa build/delivery/LectureFlow-0.1.1-build2-unsigned.ipa \
+          (cd build/package && zip -qry ../delivery/LectureFlow-0.2.0-build3-unsigned.ipa Payload)
+          python3 scripts/lectureflow_validate.py --ipa build/delivery/LectureFlow-0.2.0-build3-unsigned.ipa \
             --report build/delivery/IPA-VERIFICATION.json | tee build/logs/ipa-verification.log
           cp Docs/LectureFlow/INSTALL-WINDOWS-zh.txt build/delivery/
           cp Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt build/delivery/
           cp Docs/LectureFlow/CHANGELOG-zh.md build/delivery/
           cp Examples/WhisperAX/WhisperAX/Resources/LectureFlow-Licenses.txt build/delivery/
-          (cd build/delivery && shasum -a 256 LectureFlow-0.1.1-build2-unsigned.ipa > SHA256SUMS.txt)
-          (cd build/delivery && zip -q ../LectureFlow-0.1.1-Windows-install.zip ./*)
-          mv build/LectureFlow-0.1.1-Windows-install.zip build/delivery/
-          (cd build/delivery && shasum -a 256 LectureFlow-0.1.1-Windows-install.zip >> SHA256SUMS.txt)
+          (cd build/delivery && shasum -a 256 LectureFlow-0.2.0-build3-unsigned.ipa > SHA256SUMS.txt)
+          (cd build/delivery && zip -q ../LectureFlow-0.2.0-Windows-install.zip ./*)
+          mv build/LectureFlow-0.2.0-Windows-install.zip build/delivery/
+          (cd build/delivery && shasum -a 256 LectureFlow-0.2.0-Windows-install.zip >> SHA256SUMS.txt)
       - name: Simulator launch and initial iPad screenshot (supplemental)
         continue-on-error: true
         timeout-minutes: 10
@@ -121,7 +121,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: LectureFlow-0.1.1-build2-${{ github.sha }}
+          name: LectureFlow-0.2.0-build3-${{ github.sha }}
           path: |
             build/delivery/
             build/logs/

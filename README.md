@@ -1,27 +1,42 @@
 # LectureFlow for iPad
 
-LectureFlow adapts the existing **WhisperAX** Xcode project into a local English
+LectureFlow adapts the existing **WhisperAX** Xcode project into a local Chinese / English
 lecture recorder with persistent transcripts, optional cumulative bilingual
-cloud notes, editing and export. This repository is a real fork of
+cloud notes, interactive mind maps, editing and export. This repository is a real fork of
 `argmaxinc/argmax-oss-swift`, based on commit
 `9f99b5cb6a907730543823ad271b82532782a899`; it is not an official Argmax app.
 
 - Open `Examples/WhisperAX/WhisperAX.xcodeproj`, scheme `WhisperAX` (product: LectureFlow).
-- iPadOS 17+, version 0.1.1 (2), bundle ID `com.yufeizheng.lectureflow`.
+- iPadOS 17+, upcoming version 0.2.0 (3), bundle ID `com.yufeizheng.lectureflow`.
+- Planned release tag: `v0.2.0-unsigned.1`; IPA: `LectureFlow-0.2.0-build3-unsigned.ipa`.
+  This version's CI build, IPA verification and device acceptance are still pending.
 - [Windows / AltStore installation](Docs/LectureFlow/INSTALL-WINDOWS-zh.txt)
   and [required device acceptance checks](Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt).
 - [Build workflow](.github/workflows/lectureflow-ios.yml) produces an unsigned IPA.
   A successful build does not establish free AltStore signing or 90-minute device reliability.
-- [0.1.1 changes](Docs/LectureFlow/CHANGELOG-zh.md): cumulative course notes,
-  grouping of short transcript excerpts, and rebuilding notes for existing lessons.
-- `tiny.en` Core ML weights download on the device from
+- [Changes](Docs/LectureFlow/CHANGELOG-zh.md): cumulative course notes and an interactive
+  bilingual concept tree, with dragging, zooming, node details and a full-screen view.
+  A classroom-language picker selects Chinese or English transcription.
+- The multilingual `base` Core ML model replaces `tiny.en` as the default and downloads on the device from
   [argmaxinc/whisperkit-coreml](https://huggingface.co/argmaxinc/whisperkit-coreml).
   The upstream model card declares MIT; weights are not included in the IPA.
   No model download or device performance measurement is claimed by this repository's CI.
-- Optional cloud notes send the course title, bounded confirmed English excerpts,
-  prior bilingual notes, manual edits and the cumulative course summary to the user's
+  Existing `tiny.en` caches are retained; the new model still needs its own first download.
+  Speed, memory use and recognition quality on iPad Air M2 remain unmeasured for this version.
+- Low-volume normalization is bounded and applies only to ASR input, preserving the original WAV.
+  Each eight-second transcription interval can use four seconds of preceding context;
+  only text owned by the current interval is committed. Device checks must still confirm continuity.
+- Optional cloud notes send the course title, bounded confirmed transcript excerpts,
+  prior bilingual notes, manual edits, the cumulative course summary and its concept tree to the user's
   configured HTTPS service using a personal Keychain key. Audio stays on the device;
   the service's charges and privacy terms apply.
+- Existing DeepSeek settings remain usable; language selection and mind maps do not require another key.
+  GPT / ChatGPT Pro sign-in without an API key is not included in this version and remains future work.
+- Notes connect definitions, examples and reasoning using lecture context without inventing
+  numbers, names, formulas or facts. Keep the source transcript and audio for verification.
+- Before upgrading, export each lesson's notes and original audio as a backup. Install over the
+  existing app with the same signing account and bundle ID, then check saved lessons and settings.
+  Do not uninstall the existing app first.
 - [Modification notice](NOTICE-LectureFlow.txt), original [LICENSE](LICENSE)
   and complete third-party [NOTICES](NOTICES) are preserved and bundled in the app.
 

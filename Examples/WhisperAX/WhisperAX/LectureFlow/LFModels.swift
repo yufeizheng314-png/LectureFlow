@@ -12,23 +12,56 @@ struct LFKeyTerm: Codable, Equatable, Sendable {
     let chinese: String
 }
 
+struct LFConceptNode: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let english: String
+    let chinese: String
+    let children: [LFConceptNode]
+
+    static func validateTree(_ roots: [LFConceptNode]) throws {
+        var ids = Set<String>()
+        var count = 0
+        func visit(_ nodes: [LFConceptNode], depth: Int) throws {
+            guard nodes.isEmpty || depth <= 4 else { throw LFError.invalidResponse("思维导图超过 4 层") }
+            for node in nodes {
+                count += 1
+                guard count <= 40, !node.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      ids.insert(node.id).inserted,
+                      !node.english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !node.chinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      node.english.count <= 160, node.chinese.count <= 160 else {
+                    throw LFError.invalidResponse("思维导图节点、双语标签或唯一标识无效")
+                }
+                try visit(node.children, depth: depth + 1)
+            }
+        }
+        try visit(roots, depth: 1)
+    }
+}
+
 // A bounded, rolling understanding of the lecture. Detailed source notes stay
 // independently editable; this snapshot is rebuilt from confirmed evidence.
 struct LFNotesSummary: Codable, Equatable, Sendable {
     let englishNotes: String
     let chineseNotes: String
     let keyTerms: [LFKeyTerm]
+    var mindMap: [LFConceptNode]? = nil
 
     enum CodingKeys: String, CodingKey {
         case englishNotes = "english_notes", chineseNotes = "chinese_notes", keyTerms = "key_terms"
+        case mindMap = "mind_map"
     }
 
-    func validate() throws {
+    func validate(requireMindMap: Bool = false) throws {
         guard !englishNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !chineseNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               englishNotes.count <= 4000, chineseNotes.count <= 4000, keyTerms.count <= 30,
               keyTerms.allSatisfy({ !$0.english.isEmpty && !$0.chinese.isEmpty && $0.english.count <= 300 && $0.chinese.count <= 300 }) else {
             throw LFError.invalidResponse("课程梳理缺少双语内容或超出长度限制")
+        }
+        if let mindMap { try LFConceptNode.validateTree(mindMap) }
+        if requireMindMap && (mindMap?.isEmpty ?? true) {
+            throw LFError.invalidResponse("缺少课程双语思维导图")
         }
     }
 }
@@ -58,6 +91,7 @@ enum LFRecordingState: String, Codable, Sendable { case recording, paused, ended
 enum LFNotesState: String, Codable, Sendable { case notConfigured, idle, generating, ready, failed }
 enum LFExportFormat: String, Sendable { case markdown, text }
 enum LFBatchState: String, Codable, Sendable { case queued, running, completed, failed }
+enum LFLectureLanguage: String, Codable, CaseIterable, Sendable { case english, chinese }
 
 struct LFNoteInput: Codable, Equatable, Sendable {
     let segmentID: String
@@ -91,6 +125,8 @@ struct LFLesson: Codable, Identifiable, Sendable {
     // Optional additions keep existing schema-1 courses readable after upgrade.
     var courseSummary: LFNotesSummary?
     var courseSummaryThrough: Double?
+    var lectureLanguage: LFLectureLanguage?
+    var effectiveLanguage: LFLectureLanguage { lectureLanguage ?? .english }
     var timelineDuration: Double {
         max(audioFiles.map { $0.offset + $0.duration }.max() ?? 0,
             segments.map(\.endTime).max() ?? 0)

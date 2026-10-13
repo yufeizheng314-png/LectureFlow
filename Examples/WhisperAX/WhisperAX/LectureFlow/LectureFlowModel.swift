@@ -46,6 +46,8 @@ final class LectureFlowModel: ObservableObject {
 
     var hasCapture: Bool { capture != nil || finalizingCapture }
     var canChangeLesson: Bool { !hasCapture && !busy }
+    var lectureLanguage: LFLectureLanguage { lesson?.effectiveLanguage ?? .english }
+    private var decodingLanguage: String { lectureLanguage == .chinese ? "zh" : "en" }
 
     init() {
         do {
@@ -105,6 +107,18 @@ final class LectureFlowModel: ObservableObject {
         catch { errorMessage = error.localizedDescription }
     }
 
+    func setLectureLanguage(_ language: LFLectureLanguage) async {
+        guard canChangeLesson, !preparingModel, let current = lesson, let store else { return }
+        busy = true
+        defer { busy = false }
+        await cancelNotes()
+        guard lesson?.id == current.id else { return }
+        do {
+            lesson = try await store.setLectureLanguage(language, for: current.id)
+            lessons = try await store.listLessons()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func prepareModel() async {
         guard !preparingModel, !hasCapture else { return }
         preparingModel = true
@@ -115,35 +129,38 @@ final class LectureFlowModel: ObservableObject {
             let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("LectureFlow/Models", isDirectory: true)
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-            let cachedName = UserDefaults.standard.string(forKey: "LectureFlow.english-model.folder")
+            let cachedName = UserDefaults.standard.string(forKey: "LectureFlow.multilingual-base.folder")
             let cached = cachedName.map { base.appendingPathComponent($0, isDirectory: true) }
             let folder: URL
             if let cached, FileManager.default.fileExists(atPath: cached.appendingPathComponent("AudioEncoder.mlmodelc").path) {
-                modelStatus = "正在加载已缓存的 tiny.en 模型"
+                modelStatus = "正在加载已缓存的中英课堂模型"
                 folder = cached
             } else {
-                modelStatus = "首次下载英文 tiny.en 模型，需要联网"
-                folder = try await WhisperKit.download(variant: "tiny.en", downloadBase: base) { [weak self] progress in
+                modelStatus = "首次下载中英课堂模型，需要联网"
+                folder = try await WhisperKit.download(variant: "openai_whisper-base", downloadBase: base) { [weak self] progress in
                     Task { @MainActor in self?.modelProgress = progress.fractionCompleted }
                 }
                 let relative = folder.path.replacingOccurrences(of: base.path + "/", with: "")
-                UserDefaults.standard.set(relative, forKey: "LectureFlow.english-model.folder")
+                UserDefaults.standard.set(relative, forKey: "LectureFlow.multilingual-base.folder")
             }
             modelStatus = "正在准备本机模型，首次可能需要几分钟"
             let kit = try await WhisperKit(WhisperKitConfig(
-                model: "tiny.en", modelFolder: folder.path,
+                model: "base", modelFolder: folder.path,
                 verbose: false, logLevel: .none, prewarm: true, load: true, download: false
             ))
-            guard kit.tokenizer != nil, kit.modelState == .loaded else {
+            guard let tokenizer = kit.tokenizer, kit.modelState == .loaded,
+                  kit.modelVariant == .base, kit.textDecoder.isModelMultilingual,
+                  let chineseToken = tokenizer.convertTokenToId("<|zh|>"),
+                  tokenizer.allLanguageTokens.contains(chineseToken) else {
                 throw LFError.invalid("模型尚未完整加载，请重新准备。")
             }
             whisper = kit
             modelReady = true
             modelProgress = 1
-            modelStatus = "tiny.en 已准备 · 英文识别在 iPad 本机运行"
+            modelStatus = "中英课堂模型已准备 · 识别在 iPad 本机运行"
         } catch {
             whisper = nil
-            modelStatus = "英文模型准备失败，可重试"
+            modelStatus = "课堂模型准备失败，可重试"
             errorMessage = error.localizedDescription
         }
     }
@@ -160,7 +177,7 @@ final class LectureFlowModel: ObservableObject {
             let next = Capture(id: UUID(), lessonID: current.id, url: url, offset: offset,
                                previousAudioGeneration: audio.sessionGeneration, isRecovery: false)
             capture = next
-            try await audio.start(using: whisper, outputURL: url, baseOffset: offset)
+            try await audio.start(using: whisper, outputURL: url, baseOffset: offset, language: decodingLanguage)
             lesson = try await store.setRecordingState(.recording, for: current.id)
         } catch {
             errorMessage = error.localizedDescription
@@ -421,7 +438,7 @@ final class LectureFlowModel: ObservableObject {
             let url = try await store.recordingURL(lessonID: current.id, fileID: id)
             capture = Capture(id: UUID(), lessonID: current.id, url: url, offset: file.offset,
                               previousAudioGeneration: audio.sessionGeneration, isRecovery: true)
-            try await audio.resumeTranscription(using: whisper, from: url, baseOffset: file.offset)
+            try await audio.resumeTranscription(using: whisper, from: url, baseOffset: file.offset, language: decodingLanguage)
             await finishCapture()
         } catch {
             errorMessage = error.localizedDescription

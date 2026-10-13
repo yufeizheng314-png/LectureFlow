@@ -72,6 +72,17 @@ actor LFLessonStore {
         return try save(lesson)
     }
 
+    // Capture activity is guarded by the UI model: historical recordingState
+    // can say recording even when no capture session is active.
+    func setLectureLanguage(_ language: LFLectureLanguage, for id: UUID) throws -> LFLesson {
+        var lesson = try loadLesson(id)
+        guard lesson.notesState != .generating, !lesson.batches.contains(where: { $0.state == .running }) else {
+            throw LFError.conflict("请等待当前笔记任务结束后再切换课程语言。")
+        }
+        lesson.lectureLanguage = language
+        return try save(lesson)
+    }
+
     func renameLesson(_ id: UUID, title: String) throws -> LFLesson {
         let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, clean.count <= 300 else { throw LFError.invalid("课程名称应为 1–300 个字符。") }
@@ -274,10 +285,24 @@ actor LFLessonStore {
         let heading = format == .markdown ? "# " : ""
         var text = "\(heading)\(lesson.title)\n\n"
         if let summary = lesson.courseSummary {
+            try summary.validate()
             text += "\(format == .markdown ? "## " : "")课程梳理 / Course overview\n\n"
             text += "\(summary.englishNotes)\n\n\(summary.chineseNotes)\n\n"
             text += summary.keyTerms.map { "\($0.english) — \($0.chinese)" }.joined(separator: "\n")
             text += "\n\n"
+            if let map = summary.mindMap, !map.isEmpty {
+                text += "\(format == .markdown ? "## " : "")思维导图 / Mind map\n\n"
+                func appendNodes(_ nodes: [LFConceptNode], depth: Int) {
+                    for node in nodes {
+                        let english = node.english.components(separatedBy: .newlines).joined(separator: " ")
+                        let chinese = node.chinese.components(separatedBy: .newlines).joined(separator: " ")
+                        text += String(repeating: "  ", count: depth) + "- \(english) / \(chinese)\n"
+                        appendNodes(node.children, depth: depth + 1)
+                    }
+                }
+                appendNodes(map, depth: 0)
+                text += "\n"
+            }
         }
         if !lesson.notes.isEmpty { text += "\(format == .markdown ? "## " : "")过程笔记 / Detailed notes\n\n" }
         for note in lesson.notes {

@@ -14,6 +14,58 @@ struct LectureRecognizedWord: Sendable {
     let text: String
 }
 
+enum LectureDecodingLanguage {
+    static func validate(_ language: String) throws -> String {
+        guard language == "en" || language == "zh" else {
+            throw LectureAudioError.message("转写语言仅支持英语或中文。")
+        }
+        return language
+    }
+}
+
+struct LectureInferenceAudio: Sendable {
+    let samples: [Float]
+    let gain: Double
+    let aboveNoiseFloor: Bool
+}
+
+/// A bounded inference-only gain. This never rewrites the original PCM/WAV.
+/// The floor is an amplitude guard, not a speech/noise classifier.
+enum LectureAudioNormalization {
+    static let maximumGain = 8.0
+    static let targetRMS = 0.08
+    static let peakLimit = 0.95
+    static let minimumRMS = 0.0005
+    static let minimumPeak = 0.0015
+
+    static func prepareForInference(_ samples: [Float]) throws -> LectureInferenceAudio {
+        guard samples.count <= LectureAudioWindowing.maximumReadFrames else {
+            throw LectureAudioError.message("识别音频窗口超过安全上限。")
+        }
+        guard !samples.isEmpty else {
+            return LectureInferenceAudio(samples: [], gain: 1, aboveNoiseFloor: false)
+        }
+        var squareSum = 0.0
+        var peak = 0.0
+        for sample in samples {
+            guard sample.isFinite else {
+                throw LectureAudioError.message("识别音频包含无效采样；原音保留，未提交此窗口。")
+            }
+            let value = Double(sample)
+            squareSum += value * value
+            peak = max(peak, abs(value))
+        }
+        let rms = sqrt(squareSum / Double(samples.count))
+        guard rms >= minimumRMS, peak >= minimumPeak else {
+            // Do not turn silence or near-zero input into apparent speech.
+            return LectureInferenceAudio(samples: samples, gain: 1, aboveNoiseFloor: false)
+        }
+        let gain = min(maximumGain, min(max(1, targetRMS / rms), peakLimit / peak))
+        return LectureInferenceAudio(samples: samples.map { Float(Double($0) * gain) },
+                                     gain: gain, aboveNoiseFloor: true)
+    }
+}
+
 struct LectureAudioWindow: Equatable, Sendable {
     let readStart: Int
     let readEnd: Int
@@ -27,7 +79,7 @@ struct LectureAudioWindow: Equatable, Sendable {
 enum LectureAudioWindowing {
     static let sampleRate = 16_000
     static let coreFrames = sampleRate * 8
-    static let contextFrames = sampleRate * 2
+    static let contextFrames = sampleRate * 4
     static let updateFrames = sampleRate * 2
     static let maximumReadFrames = coreFrames + 2 * contextFrames
 
@@ -73,4 +125,10 @@ struct LectureAudioCheckpoint: Codable, Sendable {
     var segments: [LectureTranscriptSegment]
     var captureClosed: Bool
     var interrupted: Bool
+    // Optional so checkpoints written before language selection still decode.
+    var language: String? = nil
+
+    func languageForRecovery(fallback: String) throws -> String {
+        try LectureDecodingLanguage.validate(language ?? fallback)
+    }
 }

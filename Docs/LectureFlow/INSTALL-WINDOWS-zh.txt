@@ -1,6 +1,8 @@
-LectureFlow 0.1.1 / build 2 — Windows + iPad 安装说明
+LectureFlow 0.2.0 / build 3 — Windows + iPad 安装说明
 
-此包包含真正未签名的 arm64 IPA，必须由你自己的 Apple 账号签名后安装。
+计划发布标记：v0.2.0-unsigned.1；交付 IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
+本轮 CI 构建、IPA 校验和真机验收尚待完成；这些说明不表示新版已经发布或通过验收。
+交付目标为未签名的 arm64 IPA，必须由你自己的 Apple 账号签名后安装。
 目标：iPadOS 17 或更新版本；本轮目标设备为 iPad Air 11 英寸 M2。
 LectureFlow 是独立应用，bundle ID 为 com.yufeizheng.lectureflow，不覆盖 Wasic。
 
@@ -8,25 +10,30 @@ LectureFlow 是独立应用，bundle ID 为 com.yufeizheng.lectureflow，不覆�
    官方入口：https://altstore.io/ ，Windows 指引：https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
 2. 用 USB 连接并信任 iPad，在 AltServer 中选择 Install AltStore。只在官方 AltServer/AltStore 的系统流程输入自己的 Apple 账号。
 3. 按 iPad 提示信任开发者，并在“设置 > 隐私与安全性”按需启用开发者模式。重新启动后确认。
-4. 将本包中的 LectureFlow-0.1.1-build2-unsigned.ipa 传到 iPad“文件”，从 AltStore Classic 的 My Apps 的加号导入。
+4. 将校验后的 LectureFlow-0.2.0-build3-unsigned.ipa 传到 iPad“文件”，从 AltStore Classic 的 My Apps 的加号导入。
    也可用 USB 连接后按住 Shift 左键单击 Windows AltServer 托盘图标，选择 Sideload .ipa，再选择 iPad 和此 IPA。
 5. 免费账号应用通常需要每 7 天刷新；保持 AltServer 可访问并按 AltStore 提示刷新。AltStore 本身也占用激活名额；同时保留 Wasic 时留意免费账号的 3 个激活应用名额。
 
 此 ZIP 是 IPA 与说明的文件包，不是 Windows EXE 安装器；没有代填账号、共享签名或凭据。
-可用 PowerShell 检查下载文件 SHA-256：Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.1.1-build2-unsigned.ipa'
+可用 PowerShell 检查下载文件 SHA-256：Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.2.0-build3-unsigned.ipa'
 结果应与同一 Release 的 SHA256SUMS.txt 一致。Windows ZIP 本身的 SHA 见 Release 外部校验文件。
-从旧版升级时使用原签名账号覆盖安装，保留 com.yufeizheng.lectureflow；不要先卸载已有课程。升级后核对课程、原文与原音仍可打开。
+从旧版升级前，先逐课导出笔记和原始 WAV 备份。使用原签名账号覆盖安装，保留 com.yufeizheng.lectureflow；不要先卸载应用。升级后核对课程、原文、原音、手动编辑和 AI 设置仍可打开。
 
 第一次使用
-- 首次加载 tiny.en 模型需要联网下载。模型准备完成后，英语录音转写在本机进行；IPA 不内置模型权重。
-- 先做 1 分钟录音，确认麦克风许可、英语原文、课程保存和重启后恢复。
+- 先创建或选中课程，按课堂实际语言选择“中文课”或“英文课”，再点“准备课堂模型”。默认识别模型改为支持两种语言的多语 base，不是 base.en。
+- base 首次准备需要联网下载；旧 tiny.en 缓存不会删除，但不能替代 base 的下载。准备完成后，录音转写在本机进行；IPA 不内置模型权重。
+- 分别用中文、英文做 1 分钟录音，确认麦克风许可、对应语言原文、课程保存和重启后恢复。
+- 低音量样本只在送入识别器前做受限幅度归一化，保存的原始 WAV 不变；安静环境、远距离或严重噪声下的识别质量仍需实测。
 - 云笔记为可选功能。需在设置填入你自己的 HTTPS OpenAI 兼容 chat/completions 完整地址、模型名和 Key。
-- 未配置云服务时仍可本地录音/转写。开启云笔记会向你选择的服务发送课程标题、有限的已确认英文片段、已有双语笔记、手动编辑和累计课程梳理；原音保留在本机。服务商可能按量计费。
+- 已配置的 DeepSeek 地址、模型和个人 Key 可继续使用；切换课堂语言、查看导图不需要另申请 Key。GPT / ChatGPT Pro 免 API Key 登录尚未在本版接入，作为后续工作。
+- 未配置云服务时仍可本地录音/转写。开启云笔记会向你选择的服务发送课程标题、有限的已确认转写片段、已有双语笔记、手动编辑、累计课程梳理和概念树；原音保留在本机。服务商可能按量计费。
+- 双语笔记以课程主线递推，并提供可拖动、缩放的思维导图；点击节点查看完整中英文字，可全屏打开导图。旧课暂停保存后可用“梳理整堂课”生成累计梳理和导图，原过程笔记与编辑保留。
+- 笔记可结合前后文补全连贯表达，不在成品逐句叙述推断过程；不会据此改写原始转写，也不应编造数字、人名、公式或事实。请用原音和原文核对关键内容。
 - API Key 保存于本机系统钥匙串；此包和 GitHub 构建不包含任何个人 API Key。
 - 录音涉及他人时先取得适当同意。请妥善保存含课堂声音和文字的导出文件。
 
 限制与验收
-云端编译、纯逻辑测试及 IPA 检查不等同真机验收。免费签名安装、锁屏后台、中文云笔记质量、90 分钟发热/内存/续航需要按 DEVICE-ACCEPTANCE-zh.txt 在这台 iPad 实测。
+本版新的 CI 和真机验收尚未完成。云端编译、纯逻辑测试及 IPA 检查不等同真机验收。多语 base 在 M2 上的速度、质量、内存和电量，以及免费签名安装、锁屏后台、双语笔记/导图质量、90 分钟长录音需要按 DEVICE-ACCEPTANCE-zh.txt 实测。
 不要先用重要且不可重来的课堂作为第一次长录音测试。iPad 强制终止应用时不会继续录音。
 
 源码与上游
