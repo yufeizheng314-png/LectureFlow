@@ -89,7 +89,8 @@ enum LectureAudioWindowing {
         guard sampleCount >= 0, sampleCount <= maximumReadFrames else {
             throw LectureAudioError.message("识别音频窗口超过安全上限；此窗口未提交，原音保留。")
         }
-        let latestEnd = Double(sampleCount) / Double(sampleRate) + 0.2
+        // WhisperKit timings arrive as Float; avoid rejecting its rounded boundary.
+        let latestEnd = Double(sampleCount) / Double(sampleRate) + 0.2 + 0.000001
         for word in words where !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             guard sampleCount > 0, word.start.isFinite, word.end.isFinite,
                   word.start >= 0, word.end >= word.start, word.end <= latestEnd else {

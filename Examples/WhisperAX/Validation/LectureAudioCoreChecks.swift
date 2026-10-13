@@ -103,8 +103,8 @@ struct LectureAudioCoreChecks {
         expect(!rejects { try LectureAudioWindowing.validateWordTimings([], sampleCount: rate) },
                "an empty no-speech result remains valid")
         expect(!rejects { try LectureAudioWindowing.validateWordTimings([
-            LectureRecognizedWord(start: 0.9, end: 1.2, text: " tail")], sampleCount: rate) },
-               "up to 0.2 seconds of end alignment tolerance is accepted")
+            LectureRecognizedWord(start: 0.9, end: Double(Float(1.2)), text: " tail")], sampleCount: rate) },
+               "up to 0.2 seconds of end alignment tolerance survives Float-to-Double conversion")
         expect(rejects { try LectureAudioWindowing.validateWordTimings([
             LectureRecognizedWord(start: -0.01, end: 0.2, text: " invalid")], sampleCount: rate) },
                "negative nonempty word timings are rejected")
