@@ -253,11 +253,6 @@ def main():
     report = {"synthetic": True, "off_device": True, "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "model": "multilingual openai_whisper-base", "minimum_keyword_hits": args.min_keyword_hits, "cases": [],
               "scope": "Real repository CLI inference on local system-synthesized speech. Low copies use production normalization and PCM store in bounded file windows. No microphone, teacher recording, iPad ownership/latency, cloud AI quality or device acceptance is tested."}
-    report["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-    evidence_paths = ["Examples/WhisperAX/WhisperAX/LectureFlow/" + name for name in
-                      ("LectureAudioCore.swift", "LecturePCMStore.swift", "LectureAudioSession.swift", "LectureFlowModel.swift")]
-    evidence_paths += ["scripts/lectureflow_asr_smoke.py", "scripts/LectureFlowASRTransform.swift"]
-    report["source_sha256"] = {path: sha256(repo / path) for path in evidence_paths}
     try:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, timeout=10, check=True)
         report["source_commit"] = commit.stdout.strip()
