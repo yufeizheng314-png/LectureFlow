@@ -156,8 +156,14 @@ struct TranscribeCLI: AsyncParsableCommand {
                             let top = (0..<logits.count).map { ($0, logits[$0].doubleValue) }.sorted { $0.1 > $1.1 }.prefix(5)
                             print("Diagnostic SOT top logits: \(top.map { "\($0.0):\($0.1):\(tokenizer.decode(tokens: [$0.0]))" })")
                         }
-                        if let key = predicted?.cache?.keyCache { printDiagnosticTensor(key, name: "key-output") }
-                        if let value = predicted?.cache?.valueCache { printDiagnosticTensor(value, name: "value-output") }
+                        if let key = predicted?.cache?.keyCache {
+                            printDiagnosticTensor(key, name: "key-output")
+                            printDiagnosticBufferLayout(key, name: "key-output")
+                        }
+                        if let value = predicted?.cache?.valueCache {
+                            printDiagnosticTensor(value, name: "value-output")
+                            printDiagnosticBufferLayout(value, name: "value-output")
+                        }
                     }
                 }
             }
@@ -344,6 +350,30 @@ struct TranscribeCLI: AsyncParsableCommand {
                     print("Error during diarization for \(audioPath): \(error)")
                 }
             }
+        }
+    }
+
+    private func printDiagnosticBufferLayout(_ tensor: MLMultiArray, name: String) {
+        guard tensor.dataType == .float16, tensor.shape.count == 4 else { return }
+        let originalStrides = tensor.strides.map { $0.intValue }
+        let channelCount = tensor.shape[1].intValue
+        let channels = Array(Set(Array(0..<min(8, channelCount)) + [channelCount - 1])).sorted()
+        let logical = channels.map { tensor[[0, NSNumber(value: $0), 0, 0]].doubleValue }
+        tensor.withUnsafeBytes { bytes in
+            let pointer = bytes.bindMemory(to: Float16.self)
+            let capturedStrideValues = channels.map { channel -> Double? in
+                let offset = channel * originalStrides[1]
+                return offset < pointer.count ? Double(pointer[offset]) : nil
+            }
+            print("Diagnostic \(name) read buffer: bytes=\(bytes.count), channels=\(channels), original-strides=\(originalStrides), inside-strides=\(tensor.strides), logical=\(logical), original-stride-values=\(capturedStrideValues)")
+        }
+        tensor.withUnsafeMutableBytes { bytes, actualStrides in
+            let pointer = bytes.bindMemory(to: Float16.self)
+            let currentStrideValues = channels.map { channel -> Double? in
+                let offset = channel * actualStrides[1]
+                return offset < pointer.count ? Double(pointer[offset]) : nil
+            }
+            print("Diagnostic \(name) mutable buffer: bytes=\(bytes.count), buffer-strides=\(actualStrides), buffer-stride-values=\(currentStrideValues)")
         }
     }
 
