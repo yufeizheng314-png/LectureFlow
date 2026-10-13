@@ -92,10 +92,10 @@ struct LectureFlowView: View {
         .task { await model.initialize() }
         .sheet(isPresented: $showingSettings) { LectureCloudSettings(model: model) }
         .fullScreenCover(isPresented: $showingVisuals) {
-            if let blocks = model.lesson?.courseSummary?.visuals,
-               (try? LFVisualBlock.validateBlocks(blocks)) != nil {
-                LFVisualNotesGallery(model: model, blocks: blocks, initialID: selectedVisualID)
-            }
+            let blocks = model.lesson?.courseSummary?.visuals ?? []
+            LFVisualNotesGallery(model: model,
+                                 blocks: (try? LFVisualBlock.validateBlocks(blocks)) != nil ? blocks : [],
+                                 initialID: selectedVisualID)
         }
         .fullScreenCover(isPresented: $showingMindMap) {
             if let lesson = model.lesson, let nodes = lesson.courseSummary?.mindMap {

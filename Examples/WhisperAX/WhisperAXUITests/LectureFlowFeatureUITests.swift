@@ -135,6 +135,10 @@ final class LectureFlowFeatureUITests: XCTestCase {
             keepScreenshot(app, named: "Economics visual \(id)")
             print("VISUAL_UI_CHECK PASS rendered+details \(id)")
         }
+        selectVisual(app, id: "econ-long-table", title: "计量统计概念长表")
+        keepScreenshot(app, named: "Twelve-row six-column economics comparison table")
+        verifyLongTableEnds(app)
+        print("VISUAL_UI_CHECK PASS rendered+details econ-long-table")
 
         // A real process restart must retrieve the same stored structured data.
         app.terminate()
@@ -153,13 +157,17 @@ final class LectureFlowFeatureUITests: XCTestCase {
         requestRealVisualExport(app, format: "png", screenshotName: "Scatter PNG export share sheet")
         app.terminate(); app.launch()
         openVisualGallery(app, course: regressionTitle)
+        selectVisual(app, id: "econ-long-table", title: "计量统计概念长表")
+        requestRealVisualExport(app, format: "png", screenshotName: "Long comparison table PNG export share sheet")
+        app.terminate(); app.launch()
+        openVisualGallery(app, course: regressionTitle)
         requestRealVisualExport(app, format: "pdf", screenshotName: "Full econometrics PDF export share sheet")
 
         app.terminate(); app.launch()
         openVisualGallery(app, course: outputTitle)
         for (id, title) in [("econ-bar", "年度产出柱图"), ("econ-line", "产出趋势折线")] {
             selectVisual(app, id: id, title: title)
-            verifyVisualDetails(app, english: "Output (billion yuan)", chinese: "产出（亿元）")
+            verifyVisualDetails(app, english: "Output (100 million yuan)", chinese: "产出（亿元）")
             keepScreenshot(app, named: "Economics visual \(id)")
             print("VISUAL_UI_CHECK PASS rendered+details \(id)")
         }
@@ -218,6 +226,33 @@ final class LectureFlowFeatureUITests: XCTestCase {
         waitForHittable(close, "The full data view must close back to the visual gallery")
         close.tap()
         waitForDisappearance(bar, "Closing complete data must return to the same rendered visual")
+    }
+
+    @MainActor
+    private func verifyLongTableEnds(_ app: XCUIApplication) {
+        let details = app.buttons["lectureflow.visual.details"]
+        waitForHittable(details, "The maximum-size comparison table must expose its full data")
+        details.tap()
+        let bar = app.navigationBars["完整图文数据"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 10))
+        let first = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "STRESS_ROW_01_BEGIN")).firstMatch
+        waitForHittable(first, "The first row of the comparison table must be readable")
+        keepScreenshot(app, named: "Long table full data first row")
+        let last = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "R12C6")).firstMatch
+        let scroll = app.scrollViews["lectureflow.visual.data.scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        for _ in 0..<20 {
+            if last.exists && last.isHittable { break }
+            scroll.swipeUp(velocity: .fast)
+        }
+        waitForHittable(last, "Scrolling the complete table must reach the final cell of row twelve")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "第12行结束")).firstMatch.exists,
+                      "The final table cell must preserve its Chinese content as well as the English marker")
+        keepScreenshot(app, named: "Long table full data final row")
+        let close = bar.buttons["完成"]
+        waitForHittable(close, "The long table detail must close back to the gallery")
+        close.tap()
+        waitForDisappearance(bar, "The long table must remain usable after scrolling to its end")
     }
 
     @MainActor

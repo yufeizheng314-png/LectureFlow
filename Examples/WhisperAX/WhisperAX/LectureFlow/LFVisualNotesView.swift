@@ -118,6 +118,9 @@ struct LFVisualNotesGallery: View {
                         Text("已导出：\(name)").font(.caption).foregroundStyle(.secondary)
                             .accessibilityIdentifier("lectureflow.export.filename")
                     }
+                } else {
+                    ContentUnavailableView("暂无图文笔记", systemImage: "chart.xyaxis.line",
+                                           description: Text("请更新课堂笔记后查看图表。"))
                 }
             }.padding(.vertical, 12)
                 .navigationTitle("课堂图文笔记")
@@ -134,6 +137,7 @@ struct LFVisualNotesGallery: View {
             if let selected {
                 NavigationStack {
                     ScrollView { LFVisualDataView(block: selected, sourceDescription: LFVisualRenderer.sources(selected, segments: model.lesson?.segments ?? [])).padding(24) }
+                        .accessibilityIdentifier("lectureflow.visual.data.scroll")
                         .navigationTitle("完整图文数据").navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showingData = false } } }
                 }.presentationDetents([.large])
@@ -243,29 +247,83 @@ enum LFVisualRenderer {
         return labels.isEmpty ? "" : "课堂来源 / Lecture sources: " + labels.joined(separator: " · ")
     }
 
-    static func number(_ value: Double) -> String {
-        if value == 0 { return "0" }
-        if abs(value) >= 1_000_000 || abs(value) < 0.001 { return String(format: "%.3g", value) }
-        return String(format: "%.4g", value)
+    struct AxisLabels {
+        let labels: [String]
+        let annotation: String
+    }
+
+    /// Precision follows the actual tick spacing, not a fixed significant-digit
+    /// budget. Nearby large values use an explicit baseline so labels stay short.
+    static func axisLabels(_ ticks: [Double]) -> AxisLabels {
+        guard !ticks.isEmpty else { return AxisLabels(labels: [], annotation: "") }
+        let ordered = Array(Set(ticks)).sorted()
+        let magnitude = ordered.map(abs).max() ?? 0
+        let span = (ordered.last ?? 0) - (ordered.first ?? 0)
+        let gaps = zip(ordered, ordered.dropFirst()).map { $1 - $0 }.filter { $0 > 0 }
+        let rawStep = gaps.min() ?? max(magnitude, 1)
+        let rawDecimals = max(0, Int(ceil(-log10(rawStep))) + 1)
+        let wholeDigits = magnitude >= 1 ? Int(floor(log10(magnitude))) + 1 : 1
+        var baseline: Double = 0
+        var multiplier: Double = 1
+        var annotation = ""
+        if magnitude >= 1000, span > 0, magnitude / span >= 1000,
+           (magnitude >= 1_000_000 || wholeDigits + rawDecimals > 10) {
+            let quantum = pow(10, floor(log10(span)) + 1)
+            let center = (ordered[0] + ordered[ordered.count - 1]) / 2
+            baseline = (center / quantum).rounded() * quantum
+            annotation = "实际值 / value = tick \(baseline < 0 ? "−" : "+") \(value(abs(baseline)))"
+        } else if magnitude > 0, magnitude >= 1_000_000 || magnitude < 0.001 {
+            let exponent = max(-300, min(300, Int(floor(log10(magnitude)))))
+            multiplier = pow(10, Double(exponent))
+            annotation = "实际值 / value = tick × 10^\(exponent)"
+        }
+        let scaled = ticks.map { ($0 - baseline) / multiplier }
+        let scaledStep = rawStep / multiplier
+        let step = scaledStep.isFinite && scaledStep > 0 ? scaledStep : 1
+        var decimals = min(16, max(0, Int(ceil(-log10(step))) + 1))
+        func strings(_ precision: Int) -> [String] {
+            scaled.map { number in
+                var label = String(format: "%.*f", precision, number)
+                if label.contains(".") {
+                    while label.last == "0" { label.removeLast() }
+                    if label.last == "." { label.removeLast() }
+                }
+                return label == "-0" ? "0" : label
+            }
+        }
+        var labels = strings(decimals)
+        while Set(labels).count < ordered.count, decimals < 16 {
+            decimals += 1
+            labels = strings(decimals)
+        }
+        // Exact binary-neighbour inputs can require more than 16 decimal places.
+        // Swift's shortest round-trip string remains distinct in that rare case.
+        if Set(labels).count < ordered.count || zip(scaled, labels).contains(where: { $0 != 0 && $1 == "0" }) {
+            labels = scaled.map(value)
+        }
+        return AxisLabels(labels: labels, annotation: annotation)
     }
     static func value(_ number: Double) -> String {
         let encoded = String(number)
         return encoded.hasSuffix(".0") ? String(encoded.dropLast(2)) : encoded
     }
     private static func bilingual(_ value: LFKeyTerm) -> String { value.chinese + "\n" + value.english }
-    private static func attributes(_ size: CGFloat, bold: Bool = false, color: UIColor = ink) -> [NSAttributedString.Key: Any] {
+    private static func attributes(_ size: CGFloat, bold: Bool = false, color: UIColor? = nil) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 4
         paragraph.lineBreakMode = .byWordWrapping
-        return [.font: UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular), .foregroundColor: color, .paragraphStyle: paragraph]
+        return [.font: UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular), .foregroundColor: color ?? ink, .paragraphStyle: paragraph]
     }
     private static func height(_ text: String, width: CGFloat, size: CGFloat = 21, bold: Bool = false) -> CGFloat {
         ceil((text as NSString).boundingRect(with: CGSize(width: max(1, width), height: 100_000),
             options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes(size, bold: bold), context: nil).height) + 2
     }
-    @discardableResult private static func text(_ value: String, x: CGFloat = margin, y: CGFloat, width: CGFloat = contentWidth,
-                                              size: CGFloat = 21, bold: Bool = false, color: UIColor = ink, draw: Bool) -> CGFloat {
-        let h = height(value, width: width, size: size, bold: bold)
-        if draw { (value as NSString).draw(in: CGRect(x: x, y: y, width: width, height: h), withAttributes: attributes(size, bold: bold, color: color)) }
+    @discardableResult private static func text(_ value: String, x: CGFloat? = nil, y: CGFloat, width: CGFloat? = nil,
+                                              size: CGFloat = 21, bold: Bool = false, color: UIColor? = nil, draw: Bool) -> CGFloat {
+        // Swift evaluates defaults outside the caller's actor context. Resolve
+        // the drawing constants here, after entering the MainActor function.
+        let resolvedWidth = width ?? contentWidth
+        let h = height(value, width: resolvedWidth, size: size, bold: bold)
+        if draw { (value as NSString).draw(in: CGRect(x: x ?? margin, y: y, width: resolvedWidth, height: h), withAttributes: attributes(size, bold: bold, color: color)) }
         return h
     }
 
@@ -276,7 +334,8 @@ enum LFVisualRenderer {
                 _ = text("图文内容格式不完整，请更新课程笔记。", x: 20, y: 24, width: 560, draw: true)
             }
         }
-        let measured = layout(block, sourceDescription: sourceDescription, draw: false)
+        var ignoredBreaks: [CGFloat] = []
+        let measured = layout(block, sourceDescription: sourceDescription, draw: false, breaks: &ignoredBreaks)
         let format = UIGraphicsImageRendererFormat()
         // Six card previews are small; the gallery and exports render one block
         // at a time. Bound the backing pixels even for maximum-length tables.
@@ -285,32 +344,45 @@ enum LFVisualRenderer {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: measured), format: format)
         return renderer.image { context in
             UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: width, height: measured))
-            _ = layout(block, sourceDescription: sourceDescription, draw: true)
+            _ = layout(block, sourceDescription: sourceDescription, draw: true, breaks: &ignoredBreaks)
         }
     }
 
-    private static func layout(_ block: LFVisualBlock, sourceDescription: String, draw: Bool) -> CGFloat {
+    /// Logical image coordinates, independent of the capped backing-pixel scale.
+    /// Boundaries follow table rows, diagram gaps and complete text paragraphs.
+    static func pageBreaks(for block: LFVisualBlock, sourceDescription: String = "") -> [CGFloat] {
+        guard (try? LFVisualBlock.validateBlocks([block])) != nil else { return [100] }
+        var breaks: [CGFloat] = []
+        let end = layout(block, sourceDescription: sourceDescription, draw: false, breaks: &breaks)
+        breaks.append(end)
+        return Array(Set(breaks.filter { $0 > 0 && $0 <= end })).sorted()
+    }
+
+    private static func layout(_ block: LFVisualBlock, sourceDescription: String, draw: Bool, breaks: inout [CGFloat]) -> CGFloat {
         var y: CGFloat = 30
         y += text("LECTUREFLOW  /  \(block.kind.displayName)", y: y, size: 16, bold: true, color: colors[0], draw: draw) + 15
         y += text(bilingual(block.title), y: y, size: 29, bold: true, draw: draw) + 20
+        breaks.append(y)
         switch block.kind {
-        case .table: if let table = block.table { y = drawTable(table, y: y, draw: draw) }
-        case .flow, .causal: if let diagram = block.diagram { y = drawDiagram(diagram, y: y, draw: draw) }
-        case .bar, .line, .scatter: if let chart = block.chart { y = drawChart(chart, kind: block.kind, y: y, draw: draw) }
-        case .formula: if let formula = block.formula { y = drawFormula(formula, y: y, draw: draw) }
+        case .table: if let table = block.table { y = drawTable(table, y: y, draw: draw, breaks: &breaks) }
+        case .flow, .causal: if let diagram = block.diagram { y = drawDiagram(diagram, y: y, draw: draw, breaks: &breaks) }
+        case .bar, .line, .scatter: if let chart = block.chart { y = drawChart(chart, kind: block.kind, y: y, draw: draw, breaks: &breaks) }
+        case .formula: if let formula = block.formula { y = drawFormula(formula, y: y, draw: draw, breaks: &breaks) }
         }
         if !block.caption.english.isEmpty || !block.caption.chinese.isEmpty {
             y += 24
             y += text(bilingual(block.caption), y: y, size: 19, color: .darkGray, draw: draw)
+            breaks.append(y + 9)
         }
         if !sourceDescription.isEmpty {
             y += 18
             y += text(sourceDescription, y: y, size: 15, color: .gray, draw: draw)
+            breaks.append(y + 9)
         }
         return y + 30
     }
 
-    private static func drawTable(_ table: LFVisualTable, y start: CGFloat, draw: Bool) -> CGFloat {
+    private static func drawTable(_ table: LFVisualTable, y start: CGFloat, draw: Bool, breaks: inout [CGFloat]) -> CGFloat {
         guard !table.columns.isEmpty else { return start }
         let cellWidth = contentWidth / CGFloat(table.columns.count)
         var y = start
@@ -329,11 +401,12 @@ enum LFVisualRenderer {
                 }
             }
             y += rowHeight
+            breaks.append(y)
         }
         return y
     }
 
-    private static func drawDiagram(_ diagram: LFVisualDiagram, y start: CGFloat, draw: Bool) -> CGFloat {
+    private static func drawDiagram(_ diagram: LFVisualDiagram, y start: CGFloat, draw: Bool, breaks: inout [CGFloat]) -> CGFloat {
         guard !diagram.nodes.isEmpty else { return start }
         // Topological ranks keep prerequisite/effect arrows readable. Cycles are
         // placed in a final row and remain explicit in the numbered edge key.
@@ -352,6 +425,7 @@ enum LFVisualRenderer {
         let cycleRank = (ranks.values.max() ?? -1) + 1
         for id in remaining { ranks[id] = cycleRank }
         var rectangles: [String: CGRect] = [:]
+        var rowGaps: [ClosedRange<CGFloat>] = []
         var y = start + 48
         let gap: CGFloat = 32
         for rank in 0...(ranks.values.max() ?? 0) {
@@ -363,7 +437,29 @@ enum LFVisualRenderer {
                 for (column, node) in chunk.enumerated() {
                     rectangles[node.id] = CGRect(x: margin + 60 + CGFloat(column) * (boxWidth + gap), y: y, width: boxWidth, height: boxHeight)
                 }
+                rowGaps.append((y + boxHeight + 4)...(y + boxHeight + 70))
                 y += boxHeight + 76
+            }
+        }
+        // Edge number discs can sit in a node gap. Avoid their text too when
+        // selecting page cuts; crossing a connector line itself is harmless.
+        let edgeLabels: [ClosedRange<CGFloat>] = diagram.edges.enumerated().compactMap { index, edge in
+            guard let a = rectangles[edge.from], let b = rectangles[edge.to] else { return nil }
+            let adjacent = b.minY > a.maxY && b.minY - a.maxY <= 80
+            let center = adjacent ? (a.maxY + b.minY) / 2
+                : (a.maxY + 22 + CGFloat(index % 3) * 12 + b.minY - 22 - CGFloat(index % 3) * 10) / 2
+            return (center - 17)...(center + 17)
+        }
+        for (index, gap) in rowGaps.enumerated() {
+            // The final node gap is also where the connection-key heading
+            // starts; leave that heading with its first complete relation.
+            var candidate = index == rowGaps.count - 1 ? min(gap.upperBound, y - 44) : gap.upperBound
+            while candidate >= gap.lowerBound {
+                if !edgeLabels.contains(where: { $0.contains(candidate) }) {
+                    breaks.append(candidate)
+                    break
+                }
+                candidate -= 2
             }
         }
         if draw {
@@ -417,6 +513,7 @@ enum LFVisualRenderer {
             var detail = "\(index + 1). \(from.label.chinese) → \(to.label.chinese)\n\(from.label.english) → \(to.label.english)"
             if let label = edge.label { detail += "\n" + bilingual(label) }
             y += text(detail, y: y, size: 19, draw: draw) + 14
+            breaks.append(y - 4)
         }
         return y
     }
@@ -430,13 +527,22 @@ enum LFVisualRenderer {
         return (low - padding)...(high + padding)
     }
 
-    private static func drawChart(_ chart: LFVisualChart, kind: LFVisualKind, y start: CGFloat, draw: Bool) -> CGFloat {
+    private static func drawChart(_ chart: LFVisualChart, kind: LFVisualKind, y start: CGFloat, draw: Bool, breaks: inout [CGFloat]) -> CGFloat {
         let points = chart.series.flatMap(\.points).filter { $0.x.isFinite && $0.y.isFinite }
         let xs = Array(Set(points.map(\.x))).sorted()
         let xr = domain(points.map(\.x), includeZero: false)
         let yr = domain(points.map(\.y), includeZero: kind == .bar)
+        let yTicks = Array(Set((0...4).map { yr.lowerBound + Double($0) / 4 * (yr.upperBound - yr.lowerBound) })).sorted()
+        let xTicks: [Double]
+        if kind == .bar {
+            let strideSize = max(1, Int(ceil(Double(xs.count) / 8)))
+            xTicks = xs.enumerated().filter { $0.offset % strideSize == 0 }.map(\.element)
+        } else { xTicks = Array(Set((0...4).map { xr.lowerBound + Double($0) / 4 * (xr.upperBound - xr.lowerBound) })).sorted() }
+        let xLabels = axisLabels(xTicks), yLabels = axisLabels(yTicks)
         var y = start
         y += text("Y · " + bilingual(chart.yLabel), y: y, size: 20, bold: true, draw: draw) + 12
+        if !yLabels.annotation.isEmpty { y += text(yLabels.annotation, y: y, size: 18, draw: draw) + 12 }
+        breaks.append(y)
         let plot = CGRect(x: margin + 94, y: y + 12, width: contentWidth - 114, height: 420)
         func xPosition(_ value: Double) -> CGFloat {
             if kind == .bar {
@@ -447,21 +553,19 @@ enum LFVisualRenderer {
         }
         func yPosition(_ value: Double) -> CGFloat { plot.maxY - CGFloat((value - yr.lowerBound) / (yr.upperBound - yr.lowerBound)) * plot.height }
         if draw {
-            for step in 0...4 {
-                let value = yr.lowerBound + Double(step) / 4 * (yr.upperBound - yr.lowerBound)
+            for (index, value) in yTicks.enumerated() {
                 let position = yPosition(value)
                 UIColor(white: 0.88, alpha: 1).setStroke(); let grid = UIBezierPath(); grid.move(to: CGPoint(x: plot.minX, y: position)); grid.addLine(to: CGPoint(x: plot.maxX, y: position)); grid.lineWidth = 1; grid.stroke()
-                _ = text(number(value), x: margin, y: position - 12, width: 88, size: 18, draw: true)
+                _ = text(yLabels.labels[index], x: margin, y: position - 12, width: 88, size: 18, draw: true)
             }
             ink.setStroke(); let axes = UIBezierPath(); axes.move(to: CGPoint(x: plot.minX, y: plot.minY)); axes.addLine(to: CGPoint(x: plot.minX, y: plot.maxY)); axes.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY)); axes.lineWidth = 2; axes.stroke()
             if yr.contains(0) {
                 UIColor.gray.setStroke(); let zero = UIBezierPath(); zero.move(to: CGPoint(x: plot.minX, y: yPosition(0))); zero.addLine(to: CGPoint(x: plot.maxX, y: yPosition(0))); zero.lineWidth = 1.5; zero.stroke()
                 _ = text("0", x: margin + 68, y: yPosition(0) - 10, width: 24, size: 16, bold: true, draw: true)
             }
-            let ticks: [Double]
-            if kind == .bar { let strideSize = max(1, Int(ceil(Double(xs.count) / 8))); ticks = xs.enumerated().filter { $0.offset % strideSize == 0 }.map(\.element) }
-            else { ticks = (0...4).map { xr.lowerBound + Double($0) / 4 * (xr.upperBound - xr.lowerBound) } }
-            for value in ticks { _ = text(number(value), x: xPosition(value) - 42, y: plot.maxY + 12, width: 84, size: 17, draw: true) }
+            for (index, value) in xTicks.enumerated() {
+                _ = text(xLabels.labels[index], x: xPosition(value) - 42, y: plot.maxY + 12, width: 84, size: 17, draw: true)
+            }
             for (seriesIndex, series) in chart.series.enumerated() {
                 let values = series.points.filter { $0.x.isFinite && $0.y.isFinite }.sorted { $0.x < $1.x }
                 let color = colors[seriesIndex % colors.count]; color.setFill(); color.setStroke()
@@ -485,11 +589,15 @@ enum LFVisualRenderer {
                 }
             }
         }
-        y = plot.maxY + 50
+        let xTickHeight = xLabels.labels.map { height($0, width: 84, size: 17) }.max() ?? 0
+        y = plot.maxY + max(50, xTickHeight + 22)
         y += text("X · " + bilingual(chart.xLabel), y: y, size: 20, bold: true, draw: draw) + 18
+        if !xLabels.annotation.isEmpty { y += text(xLabels.annotation, y: y, size: 18, draw: draw) + 12 }
+        breaks.append(y)
         for (index, series) in chart.series.enumerated() {
             if draw { colors[index % colors.count].setFill(); UIBezierPath(roundedRect: CGRect(x: margin, y: y + 4, width: 20, height: 20), cornerRadius: 4).fill() }
             y += text(bilingual(series.label), x: margin + 32, y: y, width: contentWidth - 32, size: 20, bold: true, draw: draw) + 12
+            breaks.append(y)
         }
         // Point labels never disappear into a clipped or overlapping chart axis.
         // Their exact values remain in the data key and the accessible data view.
@@ -499,23 +607,27 @@ enum LFVisualRenderer {
                 for point in series.points {
                     guard let label = point.label else { continue }
                     y += text("\(series.label.chinese): (\(value(point.x)), \(value(point.y)))  " + bilingual(label), y: y, size: 18, draw: draw) + 8
+                    breaks.append(y)
                 }
             }
         }
         return y
     }
 
-    private static func drawFormula(_ formula: LFVisualFormula, y start: CGFloat, draw: Bool) -> CGFloat {
+    private static func drawFormula(_ formula: LFVisualFormula, y start: CGFloat, draw: Bool, breaks: inout [CGFloat]) -> CGFloat {
         var y = start
         let expressionHeight = height(formula.expression, width: contentWidth - 40, size: 32, bold: true) + 40
         if draw { colors[0].withAlphaComponent(0.07).setFill(); UIBezierPath(roundedRect: CGRect(x: margin, y: y, width: contentWidth, height: expressionHeight), cornerRadius: 18).fill() }
         _ = text(formula.expression, x: margin + 20, y: y + 20, width: contentWidth - 40, size: 32, bold: true, draw: draw)
         y += expressionHeight + 24
+        breaks.append(y)
         for symbol in formula.symbols {
             y += text(symbol.symbol + "  ·  " + bilingual(symbol.meaning), y: y, size: 22, draw: draw) + 14
+            breaks.append(y)
         }
         for (index, step) in formula.steps.enumerated() {
             y += text("\(index + 1).  " + bilingual(step), y: y, size: 22, bold: true, draw: draw) + 18
+            breaks.append(y)
         }
         return y
     }

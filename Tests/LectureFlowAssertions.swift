@@ -233,7 +233,7 @@ private func visualFixture(_ kind: String, id: String? = nil, source: String = "
         let ys = scatter ? [2.0, 3.0, 5.0] : [100.0, 110.0, 121.0]
         let points: [[String: Any]] = zip(xs, ys).map { ["x": $0.0, "y": $0.1, "label": term(String(Int($0.0)), String(Int($0.0)))] }
         value["chart"] = ["x_label": term(scatter ? "Hours (h)" : "Year", scatter ? "时长（小时）" : "年份"),
-                           "y_label": term(scatter ? "Score (points)" : "Output (billion yuan)", scatter ? "得分（分）" : "产出（亿元）"),
+                           "y_label": term(scatter ? "Score (points)" : "Output (100 million yuan)", scatter ? "得分（分）" : "产出（亿元）"),
                            "series": [["id": "observations", "label": term("Given sample", "课堂给定样本"), "points": points]]]
     case "formula":
         value["formula"] = ["expression": "β̂₁ = Σᵢ(xᵢ − x̄)(yᵢ − ȳ) / Σᵢ(xᵢ − x̄)² = 3 / 2 = 1.5",
@@ -250,6 +250,36 @@ private func visualFixture(_ kind: String, id: String? = nil, source: String = "
 
 private func visualBlocks(_ objects: [[String: Any]]) throws -> [LFVisualBlock] {
     try JSONDecoder().decode([LFVisualBlock].self, from: JSONSerialization.data(withJSONObject: objects))
+}
+
+private func longEconomicsTable() -> [String: Any] {
+    let term = visualTerm
+    // Six useful comparison dimensions across twelve concepts, with row markers
+    // that make a clipped final page or overwritten table export detectable.
+    let concepts: [(String, String, String, String, String, String, String, String, String, String)] = [
+        ("Sample mean", "样本均值", "Add the observed values and divide by the number of observations.", "观测值之和除以观测个数。", "Same unit as the measured variable.", "与变量原单位相同。", "Describe the sample center before fitting a model.", "建模前描述样本中心。", "A mean can hide skewness and does not describe the spread.", "均值可能掩盖偏态，也不能描述离散程度。"),
+        ("Sample variance", "样本方差", "Summarize squared deviations from the sample mean.", "概括各观测相对样本均值的离差平方。", "Squared unit of the original variable.", "原变量单位的平方。", "Quantify dispersion; distinguish it from a standard deviation.", "衡量离散程度，并区分标准差。", "State the denominator convention before comparing estimates.", "比较估计值前说明分母约定。"),
+        ("Covariance", "协方差", "Track whether two centered variables tend to move together.", "刻画两个中心化变量是否倾向于共同变化。", "Product of the two variable units.", "两个变量单位的乘积。", "Connect co-movement to the numerator of an OLS slope.", "把共同变化与回归斜率的分子联系起来。", "Changing either measurement scale changes the covariance.", "改变任一变量的计量尺度都会改变协方差。"),
+        ("Correlation", "相关系数", "Standardize covariance using the two standard deviations.", "用两个标准差将协方差标准化。", "Unitless when both variances are positive.", "两变量方差均为正时无量纲。", "Compare the direction and strength of a linear association.", "比较线性关联的方向与强度。", "Strong correlation alone cannot identify a causal effect.", "强相关本身不能识别因果效应。"),
+        ("OLS slope", "OLS 斜率", "Choose coefficients to minimize the sum of squared residuals.", "选择使残差平方和最小的回归系数。", "Outcome units per one predictor unit.", "结果变量单位除以解释变量单位。", "Describe the fitted conditional linear association.", "描述拟合得到的条件线性关联。", "Causal interpretation needs assumptions beyond a fitted line.", "因果解释需要拟合直线之外的额外假设。"),
+        ("Standard error", "标准误", "Estimate the sampling uncertainty of a coefficient estimator.", "估计回归系数估计量的抽样不确定性。", "Same unit as its coefficient.", "与相应回归系数单位相同。", "Support uncertainty intervals and statistical tests.", "用于不确定性区间和统计检验。", "Use a variance estimator appropriate for the data dependence.", "应根据数据依赖结构选择合适的方差估计方法。"),
+        ("Confidence interval", "置信区间", "Combine an estimate, standard error and a reference critical value.", "结合估计值、标准误和参考临界值。", "Same unit as the parameter being estimated.", "与被估计参数单位相同。", "Communicate a range of parameter values compatible with the procedure.", "表达与所用统计程序相容的参数取值范围。", "Coverage is a repeated-sampling property under stated assumptions.", "覆盖率是在指定假设下的重复抽样性质。"),
+        ("Homoskedasticity", "同方差性", "Assume that conditional error variance is constant across observations.", "假设误差项的条件方差在不同观测间保持不变。", "A variance assumption, not a new measured variable.", "它是方差假设，并非新增测量变量。", "Justify a particular classical variance formula when other assumptions hold.", "在其他假设成立时支持经典方差公式。", "Check the error-variance assumption instead of reading it from a slope.", "应检查误差方差假设，不能从斜率数值推出。"),
+        ("Heteroskedasticity", "异方差性", "Allow conditional error variance to differ across observations.", "允许误差项条件方差随观测而不同。", "Variance is still measured in squared outcome units.", "方差仍以结果变量单位的平方计量。", "Motivate an appropriate robust uncertainty calculation.", "提示采用合适的稳健不确定性计算。", "Robust standard errors do not by themselves remove omitted-variable bias.", "稳健标准误本身不能消除遗漏变量偏误。"),
+        ("Omitted variable", "遗漏变量", "A relevant excluded factor can be related to an included predictor.", "被遗漏的相关因素可能与已纳入的解释变量相关。", "Units depend on the omitted concept.", "单位取决于所遗漏的具体概念。", "Explain why a fitted association may differ from the target effect.", "解释拟合关联为什么可能不同于目标效应。", "Decide controls using the substantive causal structure, not only significance.", "应结合实际因果结构选择控制变量，而不只看显著性。"),
+        ("Instrumental variable", "工具变量", "Use a variable linked to the endogenous predictor under identifying restrictions.", "在识别限制下使用与内生解释变量相关的变量。", "Instrument and predictor units can differ.", "工具变量与解释变量单位可以不同。", "Provide an identification strategy when its assumptions are defensible.", "在假设可辩护时提供识别策略。", "Relevance alone is insufficient; exclusion and exogeneity also matter.", "仅有相关性还不够，排除限制和外生性同样重要。"),
+        ("Causal identification", "因果识别", "Link a target causal quantity to observable evidence using explicit assumptions.", "借助明确假设，把目标因果量与可观察证据联系起来。", "Use the target effect's substantive unit.", "使用目标效应对应的实际单位。", "Separate the research question, design and estimation step.", "区分研究问题、研究设计与估计步骤。", "A persuasive diagram is not proof that its causal assumptions hold.", "图示清晰并不能证明其因果假设成立。")
+    ]
+    let rows = concepts.enumerated().map { index, value -> [[String: String]] in
+        let number = index + 1
+        return [term(number == 1 ? "R01 STRESS_ROW_01_BEGIN" : "R\(String(format: "%02d", number))", "第\(number)行"),
+                term(value.0, value.1), term(value.2, value.3), term(value.4, value.5), term(value.6, value.7),
+                term(value.8 + (number == 12 ? " STRESS_ROW_12_END R12C6" : ""), value.9 + (number == 12 ? " 第12行结束。" : ""))]
+    }
+    return ["id": "econ-long-table", "kind": "table", "title": term("Twelve-concept comparison", "计量统计概念长表"),
+            "caption": term("Automated pagination fixture with predefined teaching content; not a live AI result.", "用于自动化分页验收的预设教学内容，不是真实云 AI 结果。"),
+            "source_segment_ids": ["visual-regression-2"],
+            "table": ["columns": [term("Row", "行号"), term("Concept", "概念"), term("Definition", "定义"), term("Unit", "单位"), term("Role", "用途"), term("Caveat", "注意事项")], "rows": rows]]
 }
 
 private func visualResponseObject(for request: URLRequest, blocks: [[String: Any]]) throws -> [String: Any] {
@@ -285,6 +315,7 @@ private actor EconomicsHTTP {
         }
         if ids.contains("visual-regression-2") {
             blocks += ["scatter", "formula"].map { visualFixture($0, source: "visual-regression-2") }
+            blocks.append(longEconomicsTable())
         }
         if ids.contains("visual-output-1") {
             blocks += ["bar", "line"].map { visualFixture($0, source: "visual-output-1") }
@@ -495,14 +526,21 @@ private func createEconomicsFixtures(root: URL, configuration: LFCloudConfigurat
     let opening = try await service.generatePending(lessonID: regression.id, configuration: configuration)
     check(opening.courseSummary?.visuals?.count == 3, "First economics passage must store the sample, workflow and hypothetical causal diagram together")
     _ = try await store.updateNote(lessonID: regression.id, noteID: opening.notes[0].id, english: "USER_EDIT: association is not causation.", chinese: "用户编辑：相关不等于因果。")
-    let second = LFConfirmedSegment(id: "visual-regression-2", startTime: 45, endTime: 90, english: "继续使用刚才同一组观测：(1小时,2分)、(2小时,3分)、(3小时,5分)。画散点图。x 均值是2，y均值是10/3；离差乘积和为3，x离差平方和为2。所以 OLS 斜率是 3/2=1.5 分/小时，截距是1/3分。相关关系本身不能证明因果。")
+    let longTable = longEconomicsTable()["table"] as! [String: Any]
+    let longRows = longTable["rows"] as! [[[String: String]]]
+    let longSource = longRows.map { row in row.map { $0["english"]! + " / " + $0["chinese"]! }.joined(separator: "；") }.joined(separator: "\n")
+    let secondText = "继续使用刚才同一组观测：(1小时,2分)、(2小时,3分)、(3小时,5分)。画散点图。x 均值是2，y均值是10/3；离差乘积和为3，x离差平方和为2。所以 OLS 斜率是 3/2=1.5 分/小时，截距是1/3分。相关关系本身不能证明因果。\n以下概念比较均为自动化预设原文，依次按行号、概念、定义、单位、用途和注意事项列出：\n" + longSource
+    check(secondText.count < 8000, "The complete long-table evidence must fit its intended source batch")
+    let second = LFConfirmedSegment(id: "visual-regression-2", startTime: 45, endTime: 90, english: secondText)
     _ = try await store.appendConfirmedSegments([second], to: regression.id)
     let complete = try await service.generatePending(lessonID: regression.id, configuration: configuration)
     let requests = await mock.requests
     check(requests.count == 2, "The regression fixture must use two real service rounds")
     let previousSummary = try summaryInContext(requestContext(requests[1]))
     check(previousSummary == opening.courseSummary, "Second visual generation must receive the exact first cumulative chart/table summary")
-    check(complete.courseSummary?.visuals?.count == 5 && complete.notes[0].englishNotes.contains("USER_EDIT") && complete.courseSummaryThrough == 90, "A later formula and scatter must join the retained sample/table/relationships without losing edits")
+    check(complete.courseSummary?.visuals?.count == 6 && complete.notes[0].englishNotes.contains("USER_EDIT") && complete.courseSummaryThrough == 90, "A later formula, scatter and maximum-size comparison table must join the retained visuals without losing edits")
+    let savedLongTable = complete.courseSummary?.visuals?.first(where: { $0.id == "econ-long-table" })?.table
+    check(savedLongTable?.rows.count == 12 && savedLongTable?.columns.count == 6 && savedLongTable?.rows.last?.last?.english.contains("STRESS_ROW_12_END") == true, "The sixth visual must retain all twelve rows and six bilingual columns through the real service")
     let reopened = try LFLessonStore(rootURL: root)
     check(try await reopened.loadLesson(regression.id).courseSummary == complete.courseSummary, "All structured visuals must survive actual disk reload")
     let rebuildMock = EconomicsHTTP()
@@ -562,6 +600,29 @@ private func visualSourceCoverageChecks(root: URL, configuration: LFCloudConfigu
         _ = try await store.cancelBatches(for: lesson.id)
     }
     print("VISUAL_CHECK PASS real-service future/foreign-source rejection")
+}
+
+private func visualExportSnapshotChecks(root: URL) async throws {
+    let store = try LFLessonStore(rootURL: root)
+    let lesson = try await store.createLesson(title: "Export snapshot regression")
+    _ = try await store.appendConfirmedSegments([LFConfirmedSegment(id: "snapshot-1", startTime: 0, endTime: 10, english: "Old observed sample.")], to: lesson.id)
+    let batch = try await store.prepareNextBatch(for: lesson.id)!
+    var generated = LFGeneratedNotes(englishNotes: "SNAPSHOT_OLD_NOTE", chineseNotes: "旧笔记", keyTerms: [], sourceSegmentIDs: ["snapshot-1"])
+    generated.courseSummary = LFNotesSummary(englishNotes: "SNAPSHOT_OLD_SUMMARY", chineseNotes: "旧课程梳理", keyTerms: [], mindMap: fixtureMindMap(), visuals: try visualBlocks([visualFixture("table", source: "snapshot-1")]))
+    let old = try await store.finishBatch(lessonID: lesson.id, batchID: batch.id, notes: generated)
+    let snapshotA = try await store.exportLessonSnapshot(lesson.id, format: .text)
+    _ = try await store.updateNote(lessonID: lesson.id, noteID: old.notes[0].id, english: "SNAPSHOT_NEW_NOTE", chinese: "新笔记")
+    _ = try await store.appendConfirmedSegments([LFConfirmedSegment(id: "snapshot-2", startTime: 10, endTime: 20, english: "NEW_SOURCE_FOR_CHART: 2023=100, 2024=110, 2025=121 (100 million yuan).")], to: lesson.id)
+    let replacement = LFNotesSummary(englishNotes: "SNAPSHOT_NEW_SUMMARY", chineseNotes: "新课程梳理", keyTerms: [], mindMap: fixtureMindMap(), visuals: try visualBlocks([visualFixture("bar", source: "snapshot-2")]))
+    _ = try await store.updateCourseSummary(replacement, throughTime: 20, for: lesson.id)
+    let snapshotB = try await store.exportLessonSnapshot(lesson.id, format: .text)
+    let latestDiskText = try String(contentsOf: snapshotA.url, encoding: .utf8)
+    check(snapshotA.url == snapshotB.url && latestDiskText == snapshotB.text, "The new export must replace the shared disk path while retaining an immutable old in-memory snapshot")
+    check(snapshotA.text.contains("SNAPSHOT_OLD_NOTE") && snapshotA.text.contains("SNAPSHOT_OLD_SUMMARY") && !snapshotA.text.contains("SNAPSHOT_NEW_NOTE") && !snapshotA.text.contains("NEW_SOURCE_FOR_CHART"), "Snapshot A text must not change when the live lesson and shared export path change")
+    check(snapshotA.lesson.notes == old.notes && snapshotA.lesson.courseSummary == old.courseSummary && snapshotA.lesson.segments.count == 1, "Snapshot A must keep exactly the lesson version that produced its text")
+    check(snapshotB.text.contains("SNAPSHOT_NEW_NOTE") && snapshotB.text.contains("SNAPSHOT_NEW_SUMMARY") && snapshotB.text.contains("NEW_SOURCE_FOR_CHART") && snapshotB.text.contains("年度产出柱图"), "Snapshot B text must include the new notes, summary, source evidence and visual")
+    check(snapshotB.lesson.courseSummary == replacement && snapshotB.lesson.notes[0].englishNotes == "SNAPSHOT_NEW_NOTE" && snapshotB.lesson.segments.last?.id == "snapshot-2" && snapshotB.lesson.courseSummary?.visuals?.first?.sourceSegmentIDs == ["snapshot-2"], "Snapshot B graphics and source references must come from the same new lesson as its text")
+    print("VISUAL_CHECK PASS export-snapshot text+lesson consistency across shared-path overwrite")
 }
 
 private func gatingChecks(root: URL) async throws {
@@ -1094,6 +1155,7 @@ struct LectureFlowAssertions {
         try await visualResponseContractChecks()
         try await createEconomicsFixtures(root: root.appendingPathComponent("economics", isDirectory: true), configuration: config)
         try await visualSourceCoverageChecks(root: root.appendingPathComponent("visual-coverage", isDirectory: true), configuration: config)
+        try await visualExportSnapshotChecks(root: root.appendingPathComponent("visual-export-snapshot", isDirectory: true))
         try checkNoStoredKey(root: root)
         print("LectureFlow assertions passed: dedup/conflict, 8k splitting, restart, token race, stale HTTP, retry, rolling summary/context, accumulation/flush, legacy migration/rebuild, bounded bilingual mind map, Chinese source, prompt contract, atomic failure preservation, edit/audio/tree export preservation, isolation, key redaction. Scripted responses do not verify live AI or ASR quality.")
         if let uiFixtureRoot {

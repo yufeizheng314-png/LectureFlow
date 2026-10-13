@@ -3,6 +3,7 @@ import Foundation
 import AppKit
 import ImageIO
 import PDFKit
+import CryptoKit
 
 guard CommandLine.arguments.count == 3 else {
     fatalError("usage: swift lectureflow_check_visual_exports.swift INPUT_DIRECTORY OUTPUT_DIRECTORY")
@@ -15,6 +16,9 @@ let files = try fm.contentsOfDirectory(at: input, includingPropertiesForKeys: ni
 var reports: [[String: Any]] = []
 var pngCount = 0
 var pdfCount = 0
+var longTableChecked = false
+var longTablePDFChecked = false
+let longTableDigest = SHA256.hash(data: Data("econ-long-table".utf8)).map { String(format: "%02x", $0) }.joined()
 for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
     let ext = file.pathExtension.lowercased()
     guard ["png", "pdf", "md", "txt"].contains(ext) else { continue }
@@ -27,6 +31,10 @@ for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
         let image = CGImageSourceCreateImageAtIndex(source, 0, nil)!
         precondition(image.width >= 500 && image.height >= 150, "PNG export unexpectedly small")
         pngCount += 1
+        if file.lastPathComponent.contains(longTableDigest) {
+            precondition(image.height > image.width, "Stress table must render its complete long image")
+            longTableChecked = true
+        }
         reports.append(["file": file.lastPathComponent, "kind": "png", "bytes": data.count,
                         "width": image.width, "height": image.height])
     } else if ext == "pdf" {
@@ -49,14 +57,21 @@ for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             try rendered.write(to: output.appendingPathComponent(name))
         }
         pdfCount += 1
+        if (document.string ?? "").contains("R12C6") {
+            let continuations = (document.string ?? "").components(separatedBy: "Visual notes (continued)").count - 1
+            precondition(continuations > 0, "Long table course must exercise graphical continuation pages")
+            longTablePDFChecked = true
+        }
         reports.append(["file": file.lastPathComponent, "kind": "pdf", "bytes": data.count,
                         "pages": document.pageCount, "page_sizes": pageSizes,
                         "extractable_text_characters": document.string?.count ?? 0])
     }
 }
-precondition(pngCount >= 3, "UI tests must actually export table, scatter and bar PNG files")
+precondition(pngCount >= 4, "UI tests must actually export two independent tables, scatter and bar PNG files")
 precondition(pdfCount >= 2, "UI tests must actually export both course PDFs")
-let result: [String: Any] = ["passed": true, "png_count": pngCount, "pdf_count": pdfCount, "files": reports]
+precondition(longTableChecked && longTablePDFChecked, "Long table PNG and continued PDF must both be verified")
+let result: [String: Any] = ["passed": true, "png_count": pngCount, "pdf_count": pdfCount,
+    "long_table_png_and_continued_pdf": true, "files": reports]
 try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
     .write(to: output.appendingPathComponent("VISUAL-EXPORT-CHECKS.json"))
 print("Visual export files decoded and every PDF page rendered: \(pngCount) PNG, \(pdfCount) PDF")

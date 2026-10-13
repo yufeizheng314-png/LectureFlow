@@ -1,6 +1,12 @@
 import Foundation
 
 actor LFLessonStore {
+    struct ExportSnapshot: Sendable {
+        let lesson: LFLesson
+        let text: String
+        let url: URL
+    }
+
     nonisolated let rootURL: URL
     private var recovered: Set<UUID> = []
     private var cancelledNoteRuns: Set<UUID> = []
@@ -281,6 +287,13 @@ actor LFLessonStore {
     }
 
     func exportLesson(_ id: UUID, format: LFExportFormat) throws -> URL {
+        try exportLessonSnapshot(id, format: format).url
+    }
+
+    // Read once on the store actor. Consumers must use this same lesson and
+    // text for rendered exports; another completed batch or edit may otherwise
+    // change the persisted course between a UI snapshot and a later text read.
+    func exportLessonSnapshot(_ id: UUID, format: LFExportFormat) throws -> ExportSnapshot {
         let lesson = try loadLesson(id)
         let heading = format == .markdown ? "# " : ""
         var text = "\(heading)\(lesson.title)\n\n"
@@ -319,7 +332,7 @@ actor LFLessonStore {
         try FileManager.default.createDirectory(at: exports, withIntermediateDirectories: true)
         let url = exports.appendingPathComponent(id.uuidString + (format == .markdown ? ".md" : ".txt"))
         try Data(text.utf8).write(to: url, options: .atomic)
-        return url
+        return ExportSnapshot(lesson: lesson, text: text, url: url)
     }
 
     private func directory(_ id: UUID) -> URL { rootURL.appendingPathComponent(id.uuidString, isDirectory: true) }

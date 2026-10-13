@@ -55,9 +55,17 @@ enum LecturePDFExport {
                     let image = LFVisualRenderer.image(for: block, sourceDescription: LFVisualRenderer.sources(block, segments: segments))
                     let scale = body.width / image.size.width
                     let scaledHeight = image.size.height * scale
+                    let breaks = LFVisualRenderer.pageBreaks(for: block, sourceDescription: LFVisualRenderer.sources(block, segments: segments))
+                        .map { min(scaledHeight, $0 * scale) } + [scaledHeight]
                     var offset: CGFloat = 0
                     let visualBody = CGRect(x: body.minX, y: 62, width: body.width, height: 716)
                     repeat {
+                        let limit = min(scaledHeight, offset + visualBody.height)
+                        // A complete row/paragraph stays together whenever it
+                        // fits on a page. An unusually tall individual item is
+                        // continued at the physical limit, never discarded.
+                        let next = breaks.last(where: { $0 > offset + 1 && $0 <= limit }) ?? limit
+                        let sliceHeight = next - offset
                         context.beginPage()
                         pageNumber += 1
                         let heading = offset == 0 ? "图文笔记 / Visual notes" : "图文笔记（续）/ Visual notes (continued)"
@@ -66,14 +74,15 @@ enum LecturePDFExport {
                         ])
                         let graphics = context.cgContext
                         graphics.saveGState()
-                        graphics.clip(to: visualBody)
+                        graphics.clip(to: CGRect(x: visualBody.minX, y: visualBody.minY,
+                                                  width: visualBody.width, height: sliceHeight))
                         image.draw(in: CGRect(x: visualBody.minX, y: visualBody.minY - offset, width: visualBody.width, height: scaledHeight))
                         graphics.restoreGState()
                         let footer = "LectureFlow · \(pageNumber)" as NSString
                         footer.draw(at: CGPoint(x: 42, y: 811), withAttributes: [
                             .font: UIFont.systemFont(ofSize: 9), .foregroundColor: UIColor.gray,
                         ])
-                        offset += visualBody.height
+                        offset = next
                     } while offset < scaledHeight
                 }
             }

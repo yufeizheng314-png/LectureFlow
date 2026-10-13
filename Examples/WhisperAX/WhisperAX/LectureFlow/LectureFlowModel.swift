@@ -410,13 +410,13 @@ final class LectureFlowModel: ObservableObject {
     }
 
     func exportPDF() async {
-        guard let current = lesson, let store else { return }
+        guard let id = lesson?.id, let store else { return }
         do {
-            let textURL = try await store.exportLesson(current.id, format: .text)
-            let text = try String(contentsOf: textURL, encoding: .utf8)
-            let target = textURL.deletingPathExtension().appendingPathExtension("pdf")
-            try LecturePDFExport.write(text: text, title: current.title, visuals: current.courseSummary?.visuals ?? [],
-                                       segments: current.segments, to: target)
+            let snapshot = try await store.exportLessonSnapshot(id, format: .text)
+            let target = snapshot.url.deletingPathExtension().appendingPathExtension("pdf")
+            try LecturePDFExport.write(text: snapshot.text, title: snapshot.lesson.title,
+                                       visuals: snapshot.lesson.courseSummary?.visuals ?? [],
+                                       segments: snapshot.lesson.segments, to: target)
             lastExportName = target.lastPathComponent
             exportURL = target
         } catch { errorMessage = error.localizedDescription }
