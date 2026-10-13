@@ -218,8 +218,10 @@ final class LectureFlowFeatureUITests: XCTestCase {
         details.tap()
         let bar = app.navigationBars["完整图文数据"]
         XCTAssertTrue(bar.waitForExistence(timeout: 10))
-        let englishText = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", english)).firstMatch
-        let chineseText = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", chinese)).firstMatch
+        let dataScroll = app.scrollViews["lectureflow.visual.data.scroll"]
+        XCTAssertTrue(dataScroll.waitForExistence(timeout: 10))
+        let englishText = dataScroll.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", english)).firstMatch
+        let chineseText = dataScroll.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", chinese)).firstMatch
         XCTAssertTrue(englishText.waitForExistence(timeout: 10), "Complete data must retain the expected English value, axis, or relationship")
         XCTAssertTrue(chineseText.waitForExistence(timeout: 10), "Complete data must retain the expected Chinese value, axis, or relationship")
         let close = bar.buttons["完成"]
@@ -235,18 +237,33 @@ final class LectureFlowFeatureUITests: XCTestCase {
         details.tap()
         let bar = app.navigationBars["完整图文数据"]
         XCTAssertTrue(bar.waitForExistence(timeout: 10))
-        let first = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "STRESS_ROW_01_BEGIN")).firstMatch
-        waitForHittable(first, "The first row of the comparison table must be readable")
-        keepScreenshot(app, named: "Long table full data first row")
-        let last = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "R12C6")).firstMatch
         let scroll = app.scrollViews["lectureflow.visual.data.scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        let first = scroll.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "STRESS_ROW_01_BEGIN")).firstMatch
+        // The title, bilingual caption and first column headings can place the
+        // first actual cell below the sheet viewport. Scroll it into view before
+        // asserting readability; existence alone would miss clipped content.
+        for _ in 0..<8 {
+            if first.exists && first.isHittable { break }
+            scroll.swipeUp(velocity: .slow)
+        }
+        if !first.exists || !first.isHittable {
+            keepScreenshot(app, named: "Long table first-row failure before assertion")
+            print("VISUAL_UI_DIAGNOSTIC first row not visible after bounded scrolling\n\(app.debugDescription)")
+        }
+        waitForHittable(first, "The first row of the comparison table must be readable")
+        keepScreenshot(app, named: "Long table full data first row")
+        let last = scroll.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "R12C6")).firstMatch
         for _ in 0..<20 {
             if last.exists && last.isHittable { break }
             scroll.swipeUp(velocity: .fast)
         }
+        if !last.exists || !last.isHittable {
+            keepScreenshot(app, named: "Long table final-cell failure before assertion")
+            print("VISUAL_UI_DIAGNOSTIC final cell not visible after bounded scrolling\n\(app.debugDescription)")
+        }
         waitForHittable(last, "Scrolling the complete table must reach the final cell of row twelve")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "第12行结束")).firstMatch.exists,
+        XCTAssertTrue(scroll.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "第12行结束")).firstMatch.exists,
                       "The final table cell must preserve its Chinese content as well as the English marker")
         keepScreenshot(app, named: "Long table full data final row")
         let close = bar.buttons["完成"]

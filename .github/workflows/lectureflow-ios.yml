@@ -163,10 +163,13 @@ jobs:
           xcrun simctl io "$DEVICE" screenshot build/logs/ipad-progressive-notes.png
           xcrun simctl shutdown "$DEVICE"
       - name: iPad mind map, visual notebook, exports and Chinese persistence
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           set -o pipefail
           DEVICE=$(cat build/logs/ipad-device.txt)
+          # Preserve screenshots even when an assertion fails, so layout issues
+          # can be inspected without rerunning merely to obtain diagnostics.
+          trap 'if [[ -d build/ui-feature-tests.xcresult ]]; then xcrun xcresulttool export attachments --path build/ui-feature-tests.xcresult --output-path build/ui-feature-screenshots || true; fi' EXIT
           xcodebuild test -project Examples/WhisperAX/WhisperAX.xcodeproj \
             -scheme WhisperAX -configuration Debug -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/SimulatorData \
@@ -174,8 +177,6 @@ jobs:
             -only-testing:WhisperAXUITests/LectureFlowFeatureUITests -parallel-testing-enabled NO \
             -resultBundlePath build/ui-feature-tests.xcresult CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee build/logs/ui-feature-tests.log
-          xcrun xcresulttool export attachments --path build/ui-feature-tests.xcresult \
-            --output-path build/ui-feature-screenshots
       - name: Parse actual exported PNG and PDF files and render every PDF page
         run: |
           set -o pipefail
