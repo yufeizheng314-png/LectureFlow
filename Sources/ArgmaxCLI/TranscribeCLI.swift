@@ -140,31 +140,26 @@ struct TranscribeCLI: AsyncParsableCommand {
                    let encoded = try await whisperKit.audioEncoder.encodeFeatures(mel) as? MLMultiArray {
                     printDiagnosticTensor(mel, name: "mel")
                     printDiagnosticTensor(encoded, name: "encoder")
-                    if let tokenizer = whisperKit.tokenizer,
-                       let inputs = try whisperKit.textDecoder.prepareDecoderInputs(withPrompt: [tokenizer.specialTokens.startOfTranscriptToken]) as? DecodingInputs {
-                        inputs.inputIds[0] = NSNumber(value: tokenizer.specialTokens.startOfTranscriptToken)
-                        for (name, tensor) in [("key-input", inputs.keyCache), ("value-input", inputs.valueCache),
-                                               ("padding-mask", inputs.decoderKeyPaddingMask), ("update-mask", inputs.kvCacheUpdateMask)] {
-                            printDiagnosticTensor(tensor, name: name)
-                        }
-                        let predicted = try await whisperKit.textDecoder.predictLogits(TextDecoderMLMultiArrayInputType(
-                            inputIds: inputs.inputIds, cacheLength: inputs.cacheLength, keyCache: inputs.keyCache,
-                            valueCache: inputs.valueCache, kvCacheUpdateMask: inputs.kvCacheUpdateMask,
-                            encoderOutputEmbeds: encoded, decoderKeyPaddingMask: inputs.decoderKeyPaddingMask)) as? TextDecoderMLMultiArrayOutputType
-                        if let logits = predicted?.logits {
-                            printDiagnosticTensor(logits, name: "raw-SOT-logits")
-                            let top = (0..<logits.count).map { ($0, logits[$0].doubleValue) }.sorted { $0.1 > $1.1 }.prefix(5)
-                            print("Diagnostic SOT top logits: \(top.map { "\($0.0):\($0.1):\(tokenizer.decode(tokens: [$0.0]))" })")
-                        }
-                        if let key = predicted?.cache?.keyCache {
-                            printDiagnosticTensor(key, name: "key-output")
-                            printDiagnosticBufferLayout(key, name: "key-output")
-                        }
-                        if let value = predicted?.cache?.valueCache {
-                            printDiagnosticTensor(value, name: "value-output")
-                            printDiagnosticBufferLayout(value, name: "value-output")
-                        }
+                    try dumpDiagnosticTensor(mel, name: "mel", audioPath: path)
+                    try dumpDiagnosticTensor(encoded, name: "encoder", audioPath: path)
+                    let baselineSOT = try await probeDiagnosticPrefill(whisperKit, encoded: encoded, audioPath: path)
+                    let contiguousEncoded = try diagnosticContiguousCopy(encoded)
+                    try printDiagnosticTensorComparison(encoded, contiguousEncoded, name: "encoder-contiguous-copy")
+                    let contiguousEncoderSOT = try await probeDiagnosticBareSOT(whisperKit, encoded: contiguousEncoded,
+                        name: "raw-SOT-logits-contiguous-encoder", audioPath: path)
+                    try printDiagnosticTensorComparison(baselineSOT, contiguousEncoderSOT, name: "raw-SOT-original-vs-contiguous-encoder")
+                    let contiguousMel = try diagnosticContiguousCopy(mel)
+                    try printDiagnosticTensorComparison(mel, contiguousMel, name: "mel-contiguous-copy")
+                    guard let encodedFromContiguousMel = try await whisperKit.audioEncoder.encodeFeatures(contiguousMel) as? MLMultiArray else {
+                        throw WhisperError.transcriptionFailed("Diagnostic encoder from contiguous mel lacks MLMultiArray output")
                     }
+                    printDiagnosticTensor(encodedFromContiguousMel, name: "encoder-contiguous-mel")
+                    try dumpDiagnosticTensor(encodedFromContiguousMel, name: "encoder-contiguous-mel", audioPath: path)
+                    try printDiagnosticTensorComparison(contiguousEncoded, encodedFromContiguousMel, name: "encoder-original-vs-contiguous-mel")
+                    let cleanEncodedFromMel = try diagnosticContiguousCopy(encodedFromContiguousMel)
+                    let contiguousMelSOT = try await probeDiagnosticBareSOT(whisperKit, encoded: cleanEncodedFromMel,
+                        name: "raw-SOT-logits-contiguous-mel", audioPath: path)
+                    try printDiagnosticTensorComparison(baselineSOT, contiguousMelSOT, name: "raw-SOT-original-vs-contiguous-mel")
                 }
             }
         }
@@ -353,6 +348,222 @@ struct TranscribeCLI: AsyncParsableCommand {
         }
     }
 
+    private func probeDiagnosticPrefill(_ whisperKit: WhisperKit, encoded: MLMultiArray, audioPath: String) async throws -> MLMultiArray {
+        guard let tokenizer = whisperKit.tokenizer else { throw WhisperError.tokenizerUnavailable() }
+        let language = cliArguments.language ?? "en"
+        guard let languageToken = tokenizer.convertTokenToId("<|\(language)|>"),
+              tokenizer.allLanguageTokens.contains(languageToken),
+              let taskToken = tokenizer.convertTokenToId("<|transcribe|>"),
+              taskToken == tokenizer.specialTokens.transcribeToken,
+              let zeroTimestamp = tokenizer.convertTokenToId("<|0.00|>"),
+              zeroTimestamp == tokenizer.specialTokens.timeTokenBegin else {
+            throw WhisperError.prepareDecoderInputsFailed("Diagnostic language/task/timestamp tokens are invalid")
+        }
+        let prompt = [tokenizer.specialTokens.startOfTranscriptToken, languageToken, taskToken, zeroTimestamp]
+        guard let inputs = try whisperKit.textDecoder.prepareDecoderInputs(withPrompt: prompt) as? DecodingInputs else {
+            throw WhisperError.prepareDecoderInputsFailed("Diagnostic input type is not DecodingInputs")
+        }
+        print("Diagnostic isolated timestamp prefill: \(prompt), language=\(language), filters=none")
+        for (name, tensor) in [("key-input", inputs.keyCache), ("value-input", inputs.valueCache),
+                               ("padding-mask", inputs.decoderKeyPaddingMask), ("update-mask", inputs.kvCacheUpdateMask)] {
+            printDiagnosticTensor(tensor, name: name)
+        }
+        var baselineSOT: MLMultiArray?
+        for (step, token) in prompt.enumerated() {
+            inputs.inputIds[0] = NSNumber(value: token)
+            inputs.cacheLength[0] = NSNumber(value: step)
+            guard let predicted = try await whisperKit.textDecoder.predictLogits(TextDecoderMLMultiArrayInputType(
+                inputIds: inputs.inputIds, cacheLength: inputs.cacheLength, keyCache: inputs.keyCache,
+                valueCache: inputs.valueCache, kvCacheUpdateMask: inputs.kvCacheUpdateMask,
+                encoderOutputEmbeds: encoded, decoderKeyPaddingMask: inputs.decoderKeyPaddingMask)) as? TextDecoderMLMultiArrayOutputType,
+                  let logits = predicted.logits, let key = predicted.cache?.keyCache,
+                  let value = predicted.cache?.valueCache else {
+                throw WhisperError.decodingLogitsFailed("Diagnostic prediction lacks logits or KV updates")
+            }
+            print("Diagnostic prefill step=\(step), forced-token=\(token), text=\(diagnosticTokenText(token, tokenizer: tokenizer))")
+            printDiagnosticTensor(logits, name: "step-\(step)-raw-logits")
+            if step == 0 {
+                try dumpDiagnosticTensor(logits, name: "raw-SOT-logits", audioPath: audioPath)
+                // Preserve the first result before another prediction can reuse its output buffer.
+                baselineSOT = try diagnosticContiguousCopy(logits)
+            }
+            let top = try diagnosticTopLogits(logits)
+            print("Diagnostic step-\(step) raw top5: \(top.map { "\($0.0):\($0.1):\(diagnosticTokenText($0.0, tokenizer: tokenizer))" })")
+            if step == prompt.count - 1 {
+                print("Diagnostic first-content raw argmax after forced prompt: \(top.first.map { "\($0.0):\($0.1):\(diagnosticTokenText($0.0, tokenizer: tokenizer))" } ?? "[no finite logits]")")
+            }
+            // Capture logical values before requesting byte buffers: materializing a
+            // Core ML output buffer could otherwise mask the production copy issue.
+            let expectedKey = try diagnosticCacheValues(key, target: inputs.keyCache, insertAt: step)
+            let expectedValue = try diagnosticCacheValues(value, target: inputs.valueCache, insertAt: step)
+            printDiagnosticTensor(key, name: "step-\(step)-key-output")
+            printDiagnosticTensor(value, name: "step-\(step)-value-output")
+            TextDecoder.updateKVCache(keyTensor: inputs.keyCache, keySlice: key,
+                                      valueTensor: inputs.valueCache, valueSlice: value, insertAtIndex: step)
+            printDiagnosticCacheComparison(expectedKey, source: key, target: inputs.keyCache, insertAt: step, name: "step-\(step)-key")
+            printDiagnosticCacheComparison(expectedValue, source: value, target: inputs.valueCache, insertAt: step, name: "step-\(step)-value")
+            if step == 0 {
+                printDiagnosticBufferLayout(key, name: "key-output-after-real-copy")
+                printDiagnosticBufferLayout(value, name: "value-output-after-real-copy")
+            }
+            inputs.decoderKeyPaddingMask[step + 1] = 0
+            inputs.kvCacheUpdateMask[step] = 0
+            inputs.kvCacheUpdateMask[step + 1] = 1
+        }
+        guard let baselineSOT else { throw WhisperError.decodingLogitsFailed("Diagnostic prefill produced no SOT logits") }
+        return baselineSOT
+    }
+
+    private func probeDiagnosticBareSOT(_ whisperKit: WhisperKit, encoded: MLMultiArray,
+                                        name: String, audioPath: String) async throws -> MLMultiArray {
+        guard let tokenizer = whisperKit.tokenizer else { throw WhisperError.tokenizerUnavailable() }
+        let sot = tokenizer.specialTokens.startOfTranscriptToken
+        // Each comparison starts with fresh caches and masks, without a previous prefill.
+        guard let inputs = try whisperKit.textDecoder.prepareDecoderInputs(withPrompt: [sot]) as? DecodingInputs else {
+            throw WhisperError.prepareDecoderInputsFailed("Diagnostic bare SOT lacks DecodingInputs")
+        }
+        inputs.inputIds[0] = NSNumber(value: sot)
+        inputs.cacheLength[0] = 0
+        guard let predicted = try await whisperKit.textDecoder.predictLogits(TextDecoderMLMultiArrayInputType(
+            inputIds: inputs.inputIds, cacheLength: inputs.cacheLength, keyCache: inputs.keyCache,
+            valueCache: inputs.valueCache, kvCacheUpdateMask: inputs.kvCacheUpdateMask,
+            encoderOutputEmbeds: encoded, decoderKeyPaddingMask: inputs.decoderKeyPaddingMask)) as? TextDecoderMLMultiArrayOutputType,
+              let logits = predicted.logits else {
+            throw WhisperError.decodingLogitsFailed("Diagnostic bare SOT lacks logits")
+        }
+        printDiagnosticTensor(logits, name: name)
+        let top = try diagnosticTopLogits(logits)
+        print("Diagnostic \(name) raw top5: \(top.map { "\($0.0):\($0.1):\(diagnosticTokenText($0.0, tokenizer: tokenizer))" })")
+        try dumpDiagnosticTensor(logits, name: name, audioPath: audioPath)
+        return try diagnosticContiguousCopy(logits)
+    }
+
+    private func diagnosticContiguousCopy(_ tensor: MLMultiArray) throws -> MLMultiArray {
+        let shape = tensor.shape.map { $0.intValue }
+        guard !shape.isEmpty, shape.allSatisfy({ $0 > 0 }), shape.reduce(1, *) == tensor.count else {
+            throw WhisperError.transcriptionFailed("Diagnostic copy has an invalid logical shape")
+        }
+        // Allocate standard storage and assign logical indices; no IOSurface zero-copy initializer.
+        let copied = try MLMultiArray(shape: tensor.shape, dataType: tensor.dataType)
+        for index in 0..<tensor.count {
+            let coordinates = diagnosticCoordinates(index, shape: shape)
+            copied[coordinates] = tensor[coordinates]
+        }
+        return copied
+    }
+
+    private func printDiagnosticTensorComparison(_ original: MLMultiArray, _ compared: MLMultiArray, name: String) throws {
+        let shape = original.shape.map { $0.intValue }
+        guard shape == compared.shape.map({ $0.intValue }), original.count == compared.count else {
+            throw WhisperError.transcriptionFailed("Diagnostic comparison shapes differ")
+        }
+        var mismatchCount = 0
+        var maxError = 0.0
+        var totalError = 0.0
+        for index in 0..<original.count {
+            let coordinates = diagnosticCoordinates(index, shape: shape)
+            let a = original[coordinates].doubleValue
+            let b = compared[coordinates].doubleValue
+            let error = a.isFinite && b.isFinite ? abs(a - b) : Double.infinity
+            if error != 0 { mismatchCount += 1 }
+            maxError = max(maxError, error)
+            totalError += error
+        }
+        print("Diagnostic \(name) logical comparison: values=\(original.count), original-strides=\(original.strides), compared-strides=\(compared.strides), mismatchCount=\(mismatchCount), maxError=\(maxError), meanError=\(totalError / Double(max(1, original.count)))")
+    }
+
+    private func diagnosticTokenText(_ token: Int, tokenizer: any WhisperTokenizer) -> String {
+        String(tokenizer.decode(tokens: [token]).replacingOccurrences(of: "\n", with: "\\n").prefix(48))
+    }
+
+    private func diagnosticCoordinates(_ linearIndex: Int, shape: [Int]) -> [NSNumber] {
+        var remainder = linearIndex
+        var coordinates = Array(repeating: NSNumber(value: 0), count: shape.count)
+        for dimension in shape.indices.reversed() {
+            coordinates[dimension] = NSNumber(value: remainder % shape[dimension])
+            remainder /= shape[dimension]
+        }
+        return coordinates
+    }
+
+    private func dumpDiagnosticTensor(_ tensor: MLMultiArray, name: String, audioPath: String) throws {
+        guard cliArguments.diagnosticTensors else { return }
+        let reportRoot = URL(fileURLWithPath: cliArguments.reportPath)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: reportRoot.path, isDirectory: &isDirectory), isDirectory.boolValue else { return }
+        let shape = tensor.shape.map { $0.intValue }
+        guard !shape.isEmpty, shape.allSatisfy({ $0 > 0 }), shape.reduce(1, *) == tensor.count else {
+            throw WhisperError.transcriptionFailed("Diagnostic tensor has an invalid logical shape")
+        }
+        var byteOrderProbe: UInt16 = 1
+        let littleEndian = withUnsafeBytes(of: &byteOrderProbe) { $0.first == 1 }
+        guard littleEndian else { throw WhisperError.transcriptionFailed("Diagnostic Float32 dump requires a little-endian host") }
+        // Logical row-major iteration skips physical padding in Core ML arrays.
+        let values = (0..<tensor.count).map { index in
+            Float(tensor[diagnosticCoordinates(index, shape: shape)].doubleValue)
+        }
+        let bytes = values.withUnsafeBytes { Data($0) }
+        let directory = reportRoot.appendingPathComponent("diagnostics", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stem = URL(fileURLWithPath: audioPath).deletingPathExtension().lastPathComponent + "-" + name
+        let binary = directory.appendingPathComponent(stem + ".f32.bin")
+        let metadata: [String: Any] = ["format": "raw_float32", "byte_order": "little_endian", "order": "row_major",
+            "shape": shape, "source_dtype": tensor.dataType.rawValue, "source_strides": tensor.strides.map { $0.intValue },
+            "element_count": tensor.count, "byte_count": bytes.count, "audio_basename": URL(fileURLWithPath: audioPath).lastPathComponent,
+            "tensor_name": name, "diagnostic_only": true]
+        try bytes.write(to: binary, options: .atomic)
+        try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])
+            .write(to: directory.appendingPathComponent(stem + ".shape.json"), options: .atomic)
+        print("Diagnostic logical Float32 dump: \(binary.path), shape=\(shape), bytes=\(bytes.count), order=row_major, endian=little")
+    }
+
+    private func diagnosticTopLogits(_ logits: MLMultiArray) throws -> [(Int, Double)] {
+        let shape = logits.shape.map { $0.intValue }
+        guard shape.count == 3, shape[0] == 1, shape[1] == 1 else {
+            throw WhisperError.decodingLogitsFailed("Diagnostic logits must have shape [1, 1, vocabulary]")
+        }
+        return (0..<shape[2]).map { ($0, logits[[0, 0, NSNumber(value: $0)]].doubleValue) }
+            .filter { $0.1.isFinite }
+            .sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
+            .prefix(5).map { $0 }
+    }
+
+    private func diagnosticCacheValues(_ source: MLMultiArray, target: MLMultiArray, insertAt index: Int) throws -> [Double] {
+        let shape = source.shape.map { $0.intValue }
+        let targetShape = target.shape.map { $0.intValue }
+        guard shape.count == 4, targetShape.count == 4,
+              shape[0] == 1, shape[2] == 1, shape[1] > 0, shape[3] > 0,
+              targetShape[0] == 1, targetShape[2] == 1, targetShape[1] == shape[1],
+              index >= 0, index + shape[3] < targetShape[3] else {
+            throw WhisperError.prepareDecoderInputsFailed("Diagnostic KV shape or insertion index is invalid")
+        }
+        return (0..<shape[1]).flatMap { channel in
+            (0..<shape[3]).map { offset in source[[0, NSNumber(value: channel), 0, NSNumber(value: offset)]].doubleValue }
+        }
+    }
+
+    private func printDiagnosticCacheComparison(_ expected: [Double], source: MLMultiArray, target: MLMultiArray,
+                                                insertAt index: Int, name: String) {
+        let channels = source.shape[1].intValue
+        let width = source.shape[3].intValue
+        var mismatchCount = 0
+        var maxError = 0.0
+        for channel in 0..<channels {
+            for offset in 0..<width {
+                let original = expected[channel * width + offset]
+                let copied = target[[0, NSNumber(value: channel), 0, NSNumber(value: index + offset)]].doubleValue
+                if !original.isFinite || !copied.isFinite || copied != original { mismatchCount += 1 }
+                maxError = max(maxError, original.isFinite && copied.isFinite ? abs(copied - original) : .infinity)
+            }
+        }
+        let selected = Array(Set([0, min(1, channels - 1), min(7, channels - 1), channels / 2, channels - 1])).sorted()
+        let pairs = selected.map { channel in
+            let copied = target[[0, NSNumber(value: channel), 0, NSNumber(value: index)]].doubleValue
+            return "[0,\(channel),0,0]:source=\(expected[channel * width]),copied-at=\(index):\(copied)"
+        }
+        print("Diagnostic \(name) real KV copy: channels=\(channels), values=\(expected.count), source-dtype=\(source.dataType.rawValue), target-dtype=\(target.dataType.rawValue), source-strides=\(source.strides), target-strides=\(target.strides), mismatchCount=\(mismatchCount), maxError=\(maxError), logical-samples=\(pairs)")
+    }
+
     private func printDiagnosticBufferLayout(_ tensor: MLMultiArray, name: String) {
         guard tensor.dataType == .float16, tensor.shape.count == 4 else { return }
         let originalStrides = tensor.strides.map { $0.intValue }
@@ -378,8 +589,11 @@ struct TranscribeCLI: AsyncParsableCommand {
     }
 
     private func printDiagnosticTensor(_ tensor: MLMultiArray, name: String) {
-        let indices = stride(from: 0, to: tensor.count, by: max(1, tensor.count / 4096))
-        let values = indices.map { tensor[$0].doubleValue }
+        let shape = tensor.shape.map { $0.intValue }
+        let indices = stride(from: 0, to: tensor.count, by: max(1, (tensor.count + 4095) / 4096))
+        let values = indices.map { linearIndex -> Double in
+            tensor[diagnosticCoordinates(linearIndex, shape: shape)].doubleValue
+        }
         let finite = values.filter { $0.isFinite }
         print("Diagnostic \(name): shape=\(tensor.shape), dtype=\(tensor.dataType.rawValue), strides=\(tensor.strides), sampled=\(values.count), finite=\(finite.count), min=\(finite.min() ?? .nan), max=\(finite.max() ?? .nan), rms=\(sqrt(finite.reduce(0) { $0 + $1 * $1 } / Double(max(1, finite.count))))")
     }

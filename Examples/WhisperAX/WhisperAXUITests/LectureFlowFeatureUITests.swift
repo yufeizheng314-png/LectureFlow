@@ -131,7 +131,9 @@ final class LectureFlowFeatureUITests: XCTestCase {
 
     @MainActor
     private func keepScreenshot(_ app: XCUIApplication, named name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        // Capture the physical screen: the app-window snapshot can retain its
+        // portrait bounds after the iPad rotates and crop the landscape layout.
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
