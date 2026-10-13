@@ -6,6 +6,7 @@ struct LFNotesMapView: View {
     let nodes: [LFConceptNode]
     var viewportHeight: CGFloat = 420
     var maximumFitZoom: CGFloat = 0.85
+    var zoomAccessibilityIdentifier = "lectureflow.map.zoom"
     @State private var zoom: CGFloat = 0.85
     @State private var viewportWidth: CGFloat = 600
     @State private var selection: LFMapSelection?
@@ -27,7 +28,7 @@ struct LFNotesMapView: View {
                         .disabled(zoom <= 0.45)
                         .accessibilityLabel("缩小导图")
                     Text("\(Int((zoom * 100).rounded()))%")
-                        .accessibilityIdentifier("lectureflow.map.zoom")
+                        .accessibilityIdentifier(zoomAccessibilityIdentifier)
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         .frame(width: 36)
                     Button { changeZoom(0.2) } label: { Image(systemName: "plus.magnifyingglass") }

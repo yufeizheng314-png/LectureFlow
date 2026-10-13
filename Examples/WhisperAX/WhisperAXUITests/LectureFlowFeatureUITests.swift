@@ -43,7 +43,7 @@ final class LectureFlowFeatureUITests: XCTestCase {
         XCTAssertTrue(fullscreenBar.waitForExistence(timeout: 10), "Full screen must present the course map")
         let closeFullscreen = fullscreenBar.buttons["完成"]
         waitForHittable(closeFullscreen, "Full screen must have a working close control")
-        waitForLabel(app.staticTexts["lectureflow.map.zoom"], equalTo: "120%")
+        waitForLabel(app.staticTexts["lectureflow.map.fullscreen.zoom"], equalTo: "120%")
         keepScreenshot(app, named: "Full-screen course mind map")
         closeFullscreen.tap()
         waitForDisappearance(fullscreenBar, "Closing full screen must return to the lesson")

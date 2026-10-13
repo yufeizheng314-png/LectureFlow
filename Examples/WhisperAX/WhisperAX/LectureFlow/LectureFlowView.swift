@@ -94,7 +94,8 @@ struct LectureFlowView: View {
                     GeometryReader { geometry in
                         LFNotesMapView(title: lesson.title, nodes: nodes,
                                        viewportHeight: max(420, geometry.size.height - 110),
-                                       maximumFitZoom: 1.2).padding()
+                                       maximumFitZoom: 1.2,
+                                       zoomAccessibilityIdentifier: "lectureflow.map.fullscreen.zoom").padding()
                     }
                         .navigationTitle("课堂思维导图")
                         .toolbar { Button("完成") { showingMindMap = false } }
