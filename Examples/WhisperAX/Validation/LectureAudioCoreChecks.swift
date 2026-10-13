@@ -92,6 +92,36 @@ struct LectureAudioCoreChecks {
         expect(first.canCommit && first.ownedEnd == 8 * rate, "continuous speech commits on time rather than VAD")
         let second = LectureAudioWindowing.next(committed: 8 * rate, available: 20 * rate, closed: false)!
         expect(second.readStart == 4 * rate && second.readEnd == 20 * rate, "both sides retain four seconds of bounded context")
+        let clearTimings = [LectureRecognizedWord(start: 0, end: 0.4, text: " water"),
+                            LectureRecognizedWord(start: 0.4, end: 0.9, text: " cycle")]
+        expect(!rejects { try LectureAudioWindowing.validateWordTimings(clearTimings, sampleCount: rate) },
+               "normal speech timings within the actual read duration are accepted")
+        let contextualTimings = [LectureRecognizedWord(start: 0.2, end: 0.6, text: " left context"),
+                                 LectureRecognizedWord(start: 14, end: 14.6, text: " right context")]
+        expect(!rejects { try LectureAudioWindowing.validateWordTimings(contextualTimings, sampleCount: second.readEnd - second.readStart) },
+               "valid words in either context are accepted even outside the owned core")
+        expect(!rejects { try LectureAudioWindowing.validateWordTimings([], sampleCount: rate) },
+               "an empty no-speech result remains valid")
+        expect(!rejects { try LectureAudioWindowing.validateWordTimings([
+            LectureRecognizedWord(start: 0.9, end: 1.2, text: " tail")], sampleCount: rate) },
+               "up to 0.2 seconds of end alignment tolerance is accepted")
+        expect(rejects { try LectureAudioWindowing.validateWordTimings([
+            LectureRecognizedWord(start: -0.01, end: 0.2, text: " invalid")], sampleCount: rate) },
+               "negative nonempty word timings are rejected")
+        expect(rejects { try LectureAudioWindowing.validateWordTimings([
+            LectureRecognizedWord(start: .nan, end: 0.2, text: " invalid")], sampleCount: rate) },
+               "nonfinite word starts are rejected")
+        expect(rejects { try LectureAudioWindowing.validateWordTimings([
+            LectureRecognizedWord(start: 0, end: .infinity, text: " invalid")], sampleCount: rate) },
+               "nonfinite word ends are rejected")
+        expect(rejects { try LectureAudioWindowing.validateWordTimings([
+            LectureRecognizedWord(start: 0.4, end: 0.3, text: " invalid")], sampleCount: rate) },
+               "reversed word timings are rejected")
+        expect(rejects { try LectureAudioWindowing.validateWordTimings([
+            LectureRecognizedWord(start: 0.9, end: 1.201, text: " invalid")], sampleCount: rate) },
+               "timings beyond the actual read duration and tolerance are rejected")
+        expect(rejects { try LectureAudioWindowing.validateWordTimings([], sampleCount: LectureAudioWindowing.maximumReadFrames + 1) },
+               "timestamp validation cannot accept an unbounded read window")
         var cursor = 0
         let total = 90 * 60 * rate + 17
         var windows = 0
@@ -128,6 +158,19 @@ struct LectureAudioCoreChecks {
         let restored = try JSONDecoder().decode(LectureAudioCheckpoint.self, from: JSONEncoder().encode(saved))
         expect(restored.committedFrames == saved.committedFrames && restored.segments == [a] && restored.language == "zh",
                "watermark, transcript and chosen language survive as one checkpoint")
+        var guardedCheckpoint = restored
+        let invalidDecodedWords = [LectureRecognizedWord(start: 29.63, end: 29.98, text: " [")]
+        expect(rejects {
+            // Reproduce the observed decoder result from a 14.8578-second file.
+            // The same guard runs before segment filtering and checkpoint commit.
+            try LectureAudioWindowing.validateWordTimings(invalidDecodedWords, sampleCount: 237_725)
+            guardedCheckpoint.committedFrames = second.ownedEnd
+        }, "nonempty words wholly outside the audio must fail instead of committing empty text")
+        expect(guardedCheckpoint.committedFrames == restored.committedFrames &&
+               guardedCheckpoint.segments == restored.segments && guardedCheckpoint.language == restored.language,
+               "a rejected timing result preserves the prior transcript and consumption watermark")
+        expect(try Data(contentsOf: quietURL) == quietWAV,
+               "timestamp rejection never rewrites the original WAV")
         expect(try restored.languageForRecovery(fallback: "en") == "zh", "recovery uses the original recording's language before the current selection")
         var legacyJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as! [String: Any]
         legacyJSON.removeValue(forKey: "language")

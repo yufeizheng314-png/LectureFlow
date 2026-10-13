@@ -283,6 +283,7 @@ final class LectureAudioSession: ObservableObject {
                     }
                 }
                 guard runID == generation else { return }
+                try LectureAudioWindowing.validateWordTimings(words, sampleCount: samples.count)
                 let segment = LectureAudioWindowing.segment(words: words, window: window,
                     recordingID: saved.recordingID, baseOffset: saved.baseOffset)
                 lastReadEnd = window.readEnd

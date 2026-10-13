@@ -83,6 +83,21 @@ enum LectureAudioWindowing {
     static let updateFrames = sampleRate * 2
     static let maximumReadFrames = coreFrames + 2 * contextFrames
 
+    /// Word alignment is relative to the whole read window, including context.
+    /// Invalid decoder timings must not turn a failed window into consumed silence.
+    static func validateWordTimings(_ words: [LectureRecognizedWord], sampleCount: Int) throws {
+        guard sampleCount >= 0, sampleCount <= maximumReadFrames else {
+            throw LectureAudioError.message("识别音频窗口超过安全上限；此窗口未提交，原音保留。")
+        }
+        let latestEnd = Double(sampleCount) / Double(sampleRate) + 0.2
+        for word in words where !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard sampleCount > 0, word.start.isFinite, word.end.isFinite,
+                  word.start >= 0, word.end >= word.start, word.end <= latestEnd else {
+                throw LectureAudioError.message("识别时间戳无效或超出音频范围；此窗口未提交，原音保留，可稍后补转写。")
+            }
+        }
+    }
+
     static func next(committed: Int, available: Int, closed: Bool) -> LectureAudioWindow? {
         guard committed >= 0, available > committed else { return nil }
         let ownedEnd = min(available, committed + coreFrames)
