@@ -149,6 +149,7 @@ struct LectureFlowView: View {
                     Text("英文课").tag(LFLectureLanguage.english)
                     Text("中文课").tag(LFLectureLanguage.chinese)
                 }.pickerStyle(.segmented).frame(width: 180)
+                    .accessibilityIdentifier("lectureflow.language")
                     .disabled(model.lesson == nil || model.hasCapture || model.busy || model.preparingModel)
                 Text(model.modelStatus).font(.caption).foregroundStyle(.secondary)
                 Spacer()
@@ -263,6 +264,7 @@ struct LectureFlowView: View {
                         Text("中英思维导图").font(.headline)
                         Spacer()
                         Button("全屏") { showingMindMap = true }
+                            .accessibilityIdentifier("lectureflow.map.fullscreen")
                     }
                     LFNotesMapView(title: lesson.title, nodes: nodes)
                     DisclosureGroup("双语详细笔记") { summaryText(summary) }

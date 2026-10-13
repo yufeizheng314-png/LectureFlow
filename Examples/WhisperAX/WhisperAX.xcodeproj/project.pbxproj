@@ -32,6 +32,7 @@
 		1677AFD32B5762BC008C61C0 /* WhisperAXWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1677AFB72B57618A008C61C0 /* WhisperAXWatchApp.swift */; };
 		1677AFD42B57632E008C61C0 /* WhisperAXExampleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1677AFB32B57618A008C61C0 /* WhisperAXExampleView.swift */; };
 		1677AFD92B5763B7008C61C0 /* WhisperAXUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1677AFBA2B57618A008C61C0 /* WhisperAXUITests.swift */; };
+		F310A400937AB67412C634E3 /* LectureFlowFeatureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F310A400937AB67412C634E4 /* LectureFlowFeatureUITests.swift */; };
 		1677AFDA2B5763BA008C61C0 /* WhisperAXUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1677AFB92B57618A008C61C0 /* WhisperAXUITestsLaunchTests.swift */; };
 		1677AFDC2B5763C0008C61C0 /* WhisperAXTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1677AFBC2B57618A008C61C0 /* WhisperAXTests.swift */; };
 		1677AFDD2B5763C7008C61C0 /* WhisperAX_Watch_AppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1677AFBE2B57618A008C61C0 /* WhisperAX_Watch_AppTests.swift */; };
@@ -144,6 +145,7 @@
 		1677AFB72B57618A008C61C0 /* WhisperAXWatchApp.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WhisperAXWatchApp.swift; sourceTree = "<group>"; };
 		1677AFB92B57618A008C61C0 /* WhisperAXUITestsLaunchTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WhisperAXUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		1677AFBA2B57618A008C61C0 /* WhisperAXUITests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WhisperAXUITests.swift; sourceTree = "<group>"; };
+		F310A400937AB67412C634E4 /* LectureFlowFeatureUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureFlowFeatureUITests.swift; sourceTree = "<group>"; };
 		1677AFBC2B57618A008C61C0 /* WhisperAXTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WhisperAXTests.swift; sourceTree = "<group>"; };
 		1677AFBE2B57618A008C61C0 /* WhisperAX_Watch_AppTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WhisperAX_Watch_AppTests.swift; sourceTree = "<group>"; };
 		1677AFE02B57678E008C61C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -308,6 +310,7 @@
 			isa = PBXGroup;
 			children = (
 				1677AFBA2B57618A008C61C0 /* WhisperAXUITests.swift */,
+				F310A400937AB67412C634E4 /* LectureFlowFeatureUITests.swift */,
 				1677AFB92B57618A008C61C0 /* WhisperAXUITestsLaunchTests.swift */,
 			);
 			path = WhisperAXUITests;
@@ -705,6 +708,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1677AFD92B5763B7008C61C0 /* WhisperAXUITests.swift in Sources */,
+				F310A400937AB67412C634E3 /* LectureFlowFeatureUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

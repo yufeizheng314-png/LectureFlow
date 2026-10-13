@@ -1,9 +1,12 @@
-LectureFlow 0.2.0 / build 3 真机验收（本轮 CI 与真机测试待完成）
+LectureFlow 0.2.0 / build 3 真机验收清单（真机测试待完成）
 
 环境记录：iPad Air 11 M2 / iPadOS 26.5.2；填写安装日期、可用空间、电量、签名账号类型。
-对应计划 tag：v0.2.0-unsigned.1；IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
+对应发布标记：v0.2.0-unsigned.1；IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
+自动化构建与文件校验结果见随附 IPA-VERIFICATION.json 及测试报告。
+本版 CI 包含导图 XCTest 交互及中文课堂语言设置重启保留检查；结果以 ui-feature-tests.xcresult / ui-feature-tests.log 为准。
+可选 macOS 合成语音专项下载或复用多语 base 与 tokenizer，对英/中文清晰及低音量样例做真实本机推理；结果以 ASR-SMOKE.json / ASR-SMOKE.txt 为准，不把预设测试或合成音算作真实教师或真机效果通过。
 每一项记录“通过 / 失败 / 未测”和实际现象，不把 CI 成功替代本项。
-此版多语 base 的 M2 转写速度、质量、内存和电量尚未实测。历史版本测试结果不能直接算作新版通过。
+此版多语 base 的 M2 转写速度、质量、内存和电量、教师真实低声、真实云笔记质量与 90 分钟可靠性仍待实测。历史版本测试结果不能直接算作新版通过。
 升级前先逐课备份导出笔记与原始 WAV，用原签名账号覆盖安装，不先卸载已有应用。
 
 1. AltStore 免费签名安装、首次启动、图标/应用名、麦克风授权允许与拒绝。

@@ -1,7 +1,7 @@
 LectureFlow 0.2.0 / build 3 — Windows + iPad 安装说明
 
-计划发布标记：v0.2.0-unsigned.1；交付 IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
-本轮 CI 构建、IPA 校验和真机验收尚待完成；这些说明不表示新版已经发布或通过验收。
+发布标记：v0.2.0-unsigned.1；交付 IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
+自动化构建与文件校验结果见随附 IPA-VERIFICATION.json 及测试报告；真机验收仍待完成。
 交付目标为未签名的 arm64 IPA，必须由你自己的 Apple 账号签名后安装。
 目标：iPadOS 17 或更新版本；本轮目标设备为 iPad Air 11 英寸 M2。
 LectureFlow 是独立应用，bundle ID 为 com.yufeizheng.lectureflow，不覆盖 Wasic。
@@ -33,7 +33,9 @@ LectureFlow 是独立应用，bundle ID 为 com.yufeizheng.lectureflow，不覆�
 - 录音涉及他人时先取得适当同意。请妥善保存含课堂声音和文字的导出文件。
 
 限制与验收
-本版新的 CI 和真机验收尚未完成。云端编译、纯逻辑测试及 IPA 检查不等同真机验收。多语 base 在 M2 上的速度、质量、内存和电量，以及免费签名安装、锁屏后台、双语笔记/导图质量、90 分钟长录音需要按 DEVICE-ACCEPTANCE-zh.txt 实测。
+本版 CI 包含导图 XCTest 交互及中文课堂语言设置重启保留检查，结果以 ui-feature-tests.xcresult、ui-feature-tests.log 和随附测试报告为准。
+可选合成语音专项在 macOS 下载或复用多语 base 与 tokenizer，使用系统合成的英/中文清晰、低音量样例做真实本机推理；低音量副本使用生产归一化与 PCM 代码，结果以 ASR-SMOKE.json / ASR-SMOKE.txt 为准，不预先判定通过。
+云端编译、合成语音、模拟器测试及 IPA 检查不等同真机验收。多语 base 在 M2 上的速度、质量、内存和电量，以及教师真实低声、免费签名安装、锁屏后台、真实云双语笔记/导图质量、90 分钟长录音仍需按 DEVICE-ACCEPTANCE-zh.txt 实测。
 不要先用重要且不可重来的课堂作为第一次长录音测试。iPad 强制终止应用时不会继续录音。
 
 源码与上游

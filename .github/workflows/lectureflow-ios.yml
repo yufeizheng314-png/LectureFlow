@@ -2,6 +2,11 @@ name: LectureFlow iPad
 
 on:
   workflow_dispatch:
+    inputs:
+      run_asr:
+        description: Run the synthetic local multilingual model checks
+        type: boolean
+        default: true
   push:
     branches: ["lectureflow/**"]
 
@@ -9,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lectureflow-${{ github.ref }}
+  group: lectureflow-${{ github.ref }}-${{ inputs.run_asr }}
   cancel-in-progress: false
 
 jobs:
@@ -103,6 +108,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/logs/simulator-build.log
           xcrun simctl list devices available -j > build/logs/simulator-devices.json
           DEVICE=$(python3 -c 'import json; d=json.load(open("build/logs/simulator-devices.json")); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPad" in x["name"]))')
+          echo "$DEVICE" > build/logs/ipad-device.txt
           xcrun simctl boot "$DEVICE"
           xcrun simctl bootstatus "$DEVICE" -b
           xcrun simctl install "$DEVICE" build/SimulatorData/Build/Products/Debug-iphonesimulator/LectureFlow.app
@@ -117,7 +123,22 @@ jobs:
           sleep 5
           xcrun simctl io "$DEVICE" screenshot build/logs/ipad-progressive-notes.png
           xcrun simctl shutdown "$DEVICE"
+      - name: iPad mind map interaction and Chinese language persistence
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          DEVICE=$(cat build/logs/ipad-device.txt)
+          xcodebuild test -project Examples/WhisperAX/WhisperAX.xcodeproj \
+            -scheme WhisperAX -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/SimulatorData \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            -only-testing:WhisperAXUITests/LectureFlowFeatureUITests -parallel-testing-enabled NO \
+            -resultBundlePath build/ui-feature-tests.xcresult CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build/logs/ui-feature-tests.log
+          xcrun xcresulttool export attachments --path build/ui-feature-tests.xcresult \
+            --output-path build/ui-feature-screenshots
       - name: Synthetic English, Chinese and quiet-speech local model checks
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_asr }}
         timeout-minutes: 25
         run: |
           set -o pipefail
@@ -132,5 +153,7 @@ jobs:
             build/logs/
             build/ui-fixture/
             build/asr-smoke/
+            build/ui-feature-screenshots/
+            build/ui-feature-tests.xcresult/
           if-no-files-found: error
           retention-days: 30

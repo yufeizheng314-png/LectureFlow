@@ -26,6 +26,7 @@ struct LFNotesMapView: View {
                         .disabled(zoom <= 0.45)
                         .accessibilityLabel("缩小导图")
                     Text("\(Int((zoom * 100).rounded()))%")
+                        .accessibilityIdentifier("lectureflow.map.zoom")
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         .frame(width: 36)
                     Button { changeZoom(0.2) } label: { Image(systemName: "plus.magnifyingglass") }
@@ -83,6 +84,7 @@ struct LFNotesMapView: View {
                             .shadow(color: Color.accentColor.opacity(0.18), radius: 8, y: 3)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("lectureflow.map.course")
                         .id(rootID)
                         .position(layout.rootCenter)
                         .accessibilityLabel("课程：\(title)")

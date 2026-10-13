@@ -30,16 +30,24 @@ in LectureFlow-Licenses.txt in the app bundle and release package.
 The multilingual base Core ML model is downloaded separately at runtime from
 https://huggingface.co/argmaxinc/whisperkit-coreml . That model card declares MIT;
 weights are not bundled in the IPA and their model card remains authoritative.
-This build has not downloaded model weights or measured their device performance.
+The optional synthetic ASR CI step downloads or reuses model weights and a tokenizer
+on macOS for real local base inference with clear and low-volume English / Chinese
+system-synthesized speech. Results are recorded in ASR-SMOKE.json and ASR-SMOKE.txt;
+this does not measure iPad performance or real teacher speech quality.
 Existing tiny.en model caches are not deleted. The new model requires its own
 first network download; M2 speed, quality, memory and battery use remain untested.
 Cloud notes use only the user's configured service and may incur its charges;
 existing DeepSeek settings remain in use without another key for maps or language
 selection. GPT / ChatGPT Pro sign-in without an API key is future work, not a
 feature included in this version.
-Planned release tag: v0.2.0-unsigned.1.
-Planned IPA: LectureFlow-0.2.0-build3-unsigned.ipa.
-This version's CI build, IPA verification and device acceptance are pending.
+Release tag: v0.2.0-unsigned.1.
+IPA: LectureFlow-0.2.0-build3-unsigned.ipa.
+Build and package results are recorded in the accompanying IPA-VERIFICATION.json
+and automated test report. Simulator XCTest covers mind-map interaction and Chinese
+classroom-language persistence after relaunch; actual results are recorded in
+ui-feature-tests.xcresult and ui-feature-tests.log, not assumed from test coverage.
+Device acceptance remains to be completed, including M2 performance, real teacher
+speech at low volume, live cloud-note quality and 90-minute recording reliability.
 Before an upgrade, export notes and original audio as backups, retain the same
 signing account and bundle identity, and install over the existing application.
 Do not uninstall first; verify that saved lessons and settings remain accessible.
