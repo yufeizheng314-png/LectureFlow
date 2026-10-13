@@ -1,53 +1,60 @@
 # LectureFlow for iPad
 
 LectureFlow adapts the existing **WhisperAX** Xcode project into a local Chinese / English
-lecture recorder with persistent transcripts, optional cumulative bilingual
-cloud notes, interactive mind maps, editing and export. This repository is a real fork of
+lecture recorder with persistent transcripts, optional cumulative bilingual cloud notes,
+interactive mind maps, editing and export. This repository is a fork of
 `argmaxinc/argmax-oss-swift`, based on commit
 `9f99b5cb6a907730543823ad271b82532782a899`; it is not an official Argmax app.
 
 - Open `Examples/WhisperAX/WhisperAX.xcodeproj`, scheme `WhisperAX` (product: LectureFlow).
 - iPadOS 17+, version 0.2.0 (3), bundle ID `com.yufeizheng.lectureflow`.
-- Release tag: `v0.2.0-unsigned.1`; IPA: `LectureFlow-0.2.0-build3-unsigned.ipa`.
-  Build and package results are recorded in the accompanying `IPA-VERIFICATION.json`
-  and automated test report. Device acceptance remains to be completed.
-- [Windows / AltStore installation](Docs/LectureFlow/INSTALL-WINDOWS-zh.txt)
-  and [required device acceptance checks](Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt).
-- [Build workflow](.github/workflows/lectureflow-ios.yml) produces an unsigned IPA.
-  A successful build does not establish free AltStore signing or 90-minute device reliability.
-- [Changes](Docs/LectureFlow/CHANGELOG-zh.md): cumulative course notes and an interactive
-  bilingual concept tree, with dragging, zooming, node details and a full-screen view.
-  A classroom-language picker selects Chinese or English transcription.
-- The multilingual `base` Core ML model replaces `tiny.en` as the default and downloads on the device from
-  [argmaxinc/whisperkit-coreml](https://huggingface.co/argmaxinc/whisperkit-coreml).
-  The upstream model card declares MIT; weights are not included in the IPA.
-  The optional synthetic ASR CI step downloads or reuses this model and its tokenizer on macOS
-  for real local inference on clear and low-volume English / Chinese system-synthesized speech.
-  Actual results are recorded in `ASR-SMOKE.json` and `ASR-SMOKE.txt`; these are not teacher recordings
-  or iPad performance measurements.
-  Existing `tiny.en` caches are retained; the new model still needs its own first download.
-  Speed, memory use and recognition quality on iPad Air M2 remain unmeasured for this version.
-- Low-volume normalization is bounded and applies only to ASR input, preserving the original WAV.
-  Each eight-second transcription interval can use four seconds of preceding context;
-  only text owned by the current interval is committed. Device checks must still confirm continuity.
-- Simulator XCTest checks cover mind-map interaction and Chinese classroom-language persistence
-  after relaunch. Actual results are recorded in `ui-feature-tests.xcresult`, `ui-feature-tests.log`
-  and the accompanying test report; the existence of a CI test does not establish that it passed.
-  Teacher speech at low volume, live cloud-note quality and 90-minute recording reliability remain
-  device acceptance work.
+  Target tag: `v0.2.0-unsigned.1`; target IPA: `LectureFlow-0.2.0-build3-unsigned.ipa`.
+  Use the final delivery only after the complete build and package checks recorded in
+  `IPA-VERIFICATION.json`, `SHA256SUMS.txt` and the accompanying test report.
+  This version's device acceptance remains to be completed.
+- [Windows installation](Docs/LectureFlow/INSTALL-WINDOWS-zh.txt) follows the successful
+  USB + AltServer **Shift + left-click tray icon → Sideload .ipa** path.
+  [Device acceptance](Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt) covers upgrading, classroom
+  quality, model performance and long recordings. [The build workflow](.github/workflows/lectureflow-ios.yml)
+  produces an unsigned IPA for signing with the user's Apple account.
+- [Changes](Docs/LectureFlow/CHANGELOG-zh.md): cumulative notes connect definitions,
+  explanations, examples and reasoning across the course. Supported context can restore
+  obvious broken phrasing or terms; finished English / Chinese notes present the material
+  directly, without repeated inference commentary or invented specifics.
+  Existing lessons can rebuild their course summary without rerecording; passage notes,
+  manual edits and original audio are retained.
+- The bilingual mind map follows the cumulative summary, with dragging, zooming, centering,
+  full node details and a full-screen view. A classroom-language picker selects Chinese or English.
+- The multilingual `base` model replaces `tiny.en` as the default. The IPA bundles and verifies
+  a FLOAT32 encoder exported from the official [OpenAI Whisper base weights](https://github.com/openai/whisper),
+  addressing numerical overflow in the original half-precision encoder. The remaining Core ML
+  components from [argmaxinc/whisperkit-coreml](https://huggingface.co/argmaxinc/whisperkit-coreml)
+  and the tokenizer still require internet access on first preparation. Inference runs locally;
+  existing `tiny.en` and downloaded model caches are retained.
+- Bounded low-volume gain applies only to ASR input, preserving the original WAV.
+  Each eight-second interval can use up to four seconds of context on **both** sides;
+  only text belonging to that interval is committed. Invalid timing leaves the original
+  audio available for recovery instead of consuming the interval as silence.
+- Audio-core checks, course-storage and mocked HTTP note-service checks, and simulator
+  mind-map interaction / Chinese language persistence checks have passed in prior validation.
+  [macOS diagnostic CI 38352403251](https://github.com/yufeizheng314-png/LectureFlow/actions/runs/38352403251)
+  passed actual local inference using the FLOAT32 encoder for all four clear / low-volume
+  English / Chinese system-synthesized speech cases, recorded in `ASR-SMOKE.json` and `ASR-SMOKE.txt`.
+  This does not verify teacher recordings, iPad performance, microphone capture or live cloud-note
+  semantics. Final delivery checks must pass separately; iPad Air M2 speed, memory, battery use,
+  real teacher speech and 90-minute reliability remain device acceptance work.
 - Optional cloud notes send the course title, bounded confirmed transcript excerpts,
-  prior bilingual notes, manual edits, the cumulative course summary and its concept tree to the user's
+  prior bilingual notes, manual edits, the cumulative summary and concept tree to the user's
   configured HTTPS service using a personal Keychain key. Audio stays on the device;
-  the service's charges and privacy terms apply.
-- Existing DeepSeek settings remain usable; language selection and mind maps do not require another key.
-  GPT / ChatGPT Pro sign-in without an API key is not included in this version and remains future work.
-- Notes connect definitions, examples and reasoning using lecture context without inventing
-  numbers, names, formulas or facts. Keep the source transcript and audio for verification.
-- Before upgrading, export each lesson's notes and original audio as a backup. Install over the
-  existing app with the same signing account and bundle ID, then check saved lessons and settings.
+  service charges and privacy terms apply. Existing DeepSeek settings remain usable;
+  language selection and mind maps do not require another key.
+  GPT / ChatGPT Pro sign-in without an API key remains future work.
+- Before upgrading the installed app, export each lesson's notes and **all** original WAV files,
+  and verify the backup opens and plays. Install over the existing app with the same signing
+  account and bundle ID, then check saved lessons, edits, audio and DeepSeek / Keychain settings.
   Do not uninstall the existing app first.
-- [Modification notice](NOTICE-LectureFlow.txt), original [LICENSE](LICENSE)
-  and complete third-party [NOTICES](NOTICES) are preserved and bundled in the app.
+- [Modification notice](NOTICE-LectureFlow.txt), original [LICENSE](LICENSE), official Whisper
+  weight license and complete third-party [NOTICES](NOTICES) are preserved in the bundled licenses.
 
 The original upstream README follows, unchanged below this introduction.
 

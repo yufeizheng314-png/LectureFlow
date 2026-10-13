@@ -85,6 +85,19 @@ jobs:
         run: |
           set -o pipefail
           swift test --disable-automatic-resolution --filter TokenSamplerFallbackTests 2>&1 | tee build/logs/token-sampler-tests.log
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Build and verify bundled FLOAT32 base encoder
+        run: |
+          set -o pipefail
+          python3 -m venv build/encoder-venv
+          build/encoder-venv/bin/python -m pip install coremltools==9.0 torch==2.7.0 numpy==1.26.4 openai-whisper==20250625 2>&1 | tee build/logs/encoder-dependencies.log
+          build/encoder-venv/bin/python scripts/lectureflow_export_encoder.py --output-root build/encoder-export 2>&1 | tee build/logs/encoder-export.log
+          mkdir -p build/encoder-compiled
+          xcrun coremlcompiler compile build/encoder-export/AudioEncoder.mlpackage build/encoder-compiled 2>&1 | tee build/logs/encoder-compile.log
+          ditto build/encoder-compiled/AudioEncoder.mlmodelc Examples/WhisperAX/WhisperAX/LectureFlowBaseEncoder.mlmodelc
+          python3 scripts/lectureflow_encoder_manifest.py --model-folder Examples/WhisperAX/WhisperAX/LectureFlowBaseEncoder.mlmodelc --export-manifest build/encoder-export/ENCODER-EXPORT.json | tee build/logs/encoder-manifest.log
       - name: Resolve pinned local package for iPad
         if: ${{ !cancelled() }}
         run: |
@@ -115,6 +128,8 @@ jobs:
           cp Docs/LectureFlow/DEVICE-ACCEPTANCE-zh.txt build/delivery/
           cp Docs/LectureFlow/CHANGELOG-zh.md build/delivery/
           cp Examples/WhisperAX/WhisperAX/Resources/LectureFlow-Licenses.txt build/delivery/
+          cp build/encoder-export/ENCODER-EXPORT.json build/delivery/
+          cp Examples/WhisperAX/WhisperAX/LectureFlowBaseEncoder.mlmodelc/lectureflow-encoder-manifest.json build/delivery/
           (cd build/delivery && shasum -a 256 LectureFlow-0.2.0-build3-unsigned.ipa > SHA256SUMS.txt)
           (cd build/delivery && zip -q ../LectureFlow-0.2.0-Windows-install.zip ./*)
           mv build/LectureFlow-0.2.0-Windows-install.zip build/delivery/
@@ -165,7 +180,13 @@ jobs:
         timeout-minutes: 25
         run: |
           set -o pipefail
-          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "${{ inputs.asr_compute_units || 'cpuAndGPU' }}" 2>&1 | tee build/logs/asr-smoke-terminal.log
+          python3 scripts/lectureflow_asr_smoke.py --output build/asr-smoke --compute-units "${{ inputs.asr_compute_units || 'cpuAndGPU' }}" --encoder-model-path build/DerivedData/Build/Products/Release-iphoneos/LectureFlow.app/LectureFlowBaseEncoder.mlmodelc 2>&1 | tee build/logs/asr-smoke-terminal.log
+      - name: Natural speech with and without word timestamps using the packaged encoder
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_asr }}
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          python3 scripts/lectureflow_asr_controls.py --output build/asr-controls --compute-units "${{ inputs.asr_compute_units || 'cpuAndGPU' }}" --encoder-model-path build/DerivedData/Build/Products/Release-iphoneos/LectureFlow.app/LectureFlowBaseEncoder.mlmodelc 2>&1 | tee build/logs/asr-controls.log
       - name: Preserve IPA, source verification and all build logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -176,6 +197,7 @@ jobs:
             build/logs/
             build/ui-fixture/
             build/asr-smoke/
+            build/asr-controls/
             build/ui-feature-screenshots/
             build/ui-feature-tests.xcresult/
           if-no-files-found: error
@@ -227,7 +249,11 @@ jobs:
           COMPUTE_UNITS: ${{ inputs.asr_compute_units }}
         run: |
           set -o pipefail
-          python3 scripts/lectureflow_asr_controls.py --output build/asr-controls --compute-units "$COMPUTE_UNITS" 2>&1 | tee build/logs/asr-controls.log
+          ENCODER_ARGS=()
+          if [[ "${{ inputs.asr_export_encoder }}" == "true" ]]; then
+            ENCODER_ARGS+=(--encoder-model-path build/encoder-export/AudioEncoder.mlpackage)
+          fi
+          python3 scripts/lectureflow_asr_controls.py --output build/asr-controls --compute-units "$COMPUTE_UNITS" "${ENCODER_ARGS[@]}" 2>&1 | tee build/logs/asr-controls.log
       - name: Retain actual diagnostic evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

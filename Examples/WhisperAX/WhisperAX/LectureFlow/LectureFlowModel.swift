@@ -1,6 +1,8 @@
 // LectureFlow integration of the existing WhisperAX / WhisperKit project.
 import AVFoundation
 import Combine
+import CoreML
+import CryptoKit
 import Foundation
 import WhisperKit
 
@@ -126,6 +128,14 @@ final class LectureFlowModel: ObservableObject {
         modelProgress = 0
         defer { preparingModel = false }
         do {
+            modelStatus = "正在核对内置课堂模型"
+            guard let resources = Bundle.main.resourceURL else {
+                throw LFError.invalid("安装包缺少课堂模型资源，请重新安装完整版本。")
+            }
+            // Verify generated resources before downloading any other components.
+            let encoderURL = try await Task.detached(priority: .utility) {
+                try LectureFlowBundledEncoder.validatedURL(in: resources)
+            }.value
             let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("LectureFlow/Models", isDirectory: true)
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -148,6 +158,19 @@ final class LectureFlowModel: ObservableObject {
                 model: "base", modelFolder: folder.path,
                 verbose: false, logLevel: .none, prewarm: true, load: true, download: false
             ))
+            guard kit.modelVariant == .base, let encoder = kit.audioEncoder as? AudioEncoder else {
+                throw LFError.invalid("课堂模型编码器不匹配，请重新准备。")
+            }
+            // Replace only this in-memory encoder; preserve all downloaded models.
+            try await encoder.loadModel(at: encoderURL, computeUnits: .cpuAndGPU)
+            guard let description = encoder.model?.modelDescription,
+                  let input = description.inputDescriptionsByName["melspectrogram_features"]?.multiArrayConstraint,
+                  let output = description.outputDescriptionsByName["encoder_output_embeds"]?.multiArrayConstraint,
+                  input.shape.map({ $0.intValue }) == [1, 80, 1, 3000], input.dataType == .float32,
+                  output.shape.map({ $0.intValue }) == [1, 512, 1, 1500], output.dataType == .float32,
+                  encoder.embedSize == 512, encoder.sequenceLength == 1500 else {
+                throw LFError.invalid("内置课堂模型尚未完整加载，请重新安装完整版本。")
+            }
             guard let tokenizer = kit.tokenizer, kit.modelState == .loaded,
                   kit.modelVariant == .base, kit.textDecoder.isModelMultilingual,
                   let chineseToken = tokenizer.convertTokenToId("<|zh|>"),
@@ -444,5 +467,77 @@ final class LectureFlowModel: ObservableObject {
             errorMessage = error.localizedDescription
             await finishCapture()
         }
+    }
+}
+
+private enum LectureFlowBundledEncoder {
+    private struct Manifest: Decodable {
+        let schema_version: Int
+        let model: String
+        let compute_precision: String
+        let base_sha256: String
+        let input_shape: [Int]
+        let output_shape: [Int]
+        let files: [Entry]
+    }
+
+    private struct Entry: Decodable {
+        let path: String
+        let bytes: Int64
+        let sha256: String
+    }
+
+    static func validatedURL(in resources: URL) throws -> URL {
+        let failure = LFError.invalid("内置课堂模型缺失或校验失败，请重新安装完整版本后重试。")
+        let root = resources.appendingPathComponent("LectureFlowBaseEncoder.mlmodelc", isDirectory: true)
+            .resolvingSymlinksInPath().standardizedFileURL
+        var directory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: root.path, isDirectory: &directory), directory.boolValue else { throw failure }
+        let manifestName = "lectureflow-encoder-manifest.json"
+        let manifestURL = root.appendingPathComponent(manifestName)
+        let manifestSize = try manifestURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard manifestSize > 0, manifestSize <= 1_048_576 else { throw failure }
+        let manifest: Manifest
+        do { manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifestURL)) }
+        catch { throw failure }
+        guard manifest.schema_version == 1, manifest.model == "openai/whisper-base",
+              manifest.compute_precision == "FLOAT32",
+              manifest.base_sha256 == "ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e",
+              manifest.input_shape == [1, 80, 1, 3000], manifest.output_shape == [1, 512, 1, 1500],
+              !manifest.files.isEmpty, manifest.files.count <= 256,
+              manifest.files.contains(where: { $0.path == "coremldata.bin" && $0.bytes > 0 }) else { throw failure }
+        var expectedPaths = Set<String>()
+        for entry in manifest.files {
+            try Task.checkCancellation()
+            let components = entry.path.split(separator: "/", omittingEmptySubsequences: false)
+            guard !components.isEmpty, components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+                  !entry.path.contains("\\"), !entry.path.contains("\0"), entry.path != manifestName,
+                  expectedPaths.insert(entry.path).inserted, entry.bytes >= 0, entry.bytes <= 268_435_456,
+                  entry.sha256.count == 64, entry.sha256.allSatisfy({ "0123456789abcdef".contains($0) }) else { throw failure }
+            let file = root.appendingPathComponent(entry.path).resolvingSymlinksInPath().standardizedFileURL
+            guard file.path.hasPrefix(root.path + "/") else { throw failure }
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true, Int64(values.fileSize ?? -1) == entry.bytes else { throw failure }
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            var digest = SHA256()
+            while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+                try Task.checkCancellation()
+                digest.update(data: chunk)
+            }
+            let actual = digest.finalize().map { String(format: "%02x", $0) }.joined()
+            guard actual == entry.sha256 else { throw failure }
+        }
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { throw failure }
+        var actualPaths = Set<String>()
+        while let file = enumerator.nextObject() as? URL {
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey])
+            if values.isRegularFile == true {
+                let path = String(file.path.dropFirst(root.path.count + 1))
+                if path != manifestName { actualPaths.insert(path) }
+            }
+        }
+        guard actualPaths == expectedPaths else { throw failure }
+        return root
     }
 }

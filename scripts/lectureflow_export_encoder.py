@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export only the official Whisper base encoder for a FLOAT32 diagnostic control.
+"""Export the official Whisper base encoder with verified FLOAT32 computation.
 
 Run in an isolated macOS Python 3.12 environment with:
   coremltools==9.0 torch==2.7.0 numpy==1.26.4 openai-whisper==20250625
@@ -175,8 +175,8 @@ def export(args, report: dict) -> None:
     package_path = args.output_root / "AudioEncoder.mlpackage"
     if package_path.exists():
         raise ValueError("AudioEncoder.mlpackage already exists; refusing to replace it")
-    converted.short_description = "Official Whisper base FLOAT32 encoder diagnostic control; ASR quality not yet verified"
-    converted.user_defined_metadata["lectureflow.diagnostic_only"] = "true"
+    converted.short_description = "Official Whisper base encoder with FLOAT32 computation for LectureFlow"
+    converted.user_defined_metadata["lectureflow.compute_precision"] = "FLOAT32"
     converted.user_defined_metadata["lectureflow.base_sha256"] = BASE_SHA256
     converted.save(str(package_path))
     report["graph"] = {"compute_precision": "FLOAT32", "compute_units_at_conversion": "CPU_ONLY",
@@ -202,7 +202,7 @@ def main() -> int:
     args.output_root = args.output_root.resolve()
     args.output_root.mkdir(parents=True, exist_ok=True)
     script = Path(__file__).resolve()
-    report = {"diagnostic_only": True, "synthetic_trace_inputs": True, "asr_acceptance": False,
+    report = {"export_only": True, "synthetic_trace_inputs": True, "asr_acceptance": False,
               "status": "failed", "source_commit": source_commit(script.parent.parent),
               "script_sha256": sha256(script), "python": sys.version, "platform": platform.platform(),
               "pinned_versions": PINNED_VERSIONS,
@@ -217,7 +217,7 @@ def main() -> int:
         print(report["error"], file=sys.stderr)
         code = 1
     (args.output_root / "ENCODER-EXPORT.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"Encoder diagnostic export status: {report['status']}; manifest: {args.output_root / 'ENCODER-EXPORT.json'}")
+    print(f"Encoder export status: {report['status']}; manifest: {args.output_root / 'ENCODER-EXPORT.json'}")
     return code
 
 

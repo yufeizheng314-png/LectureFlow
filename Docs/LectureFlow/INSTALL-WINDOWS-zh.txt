@@ -1,44 +1,42 @@
 LectureFlow 0.2.0 / build 3 — Windows + iPad 安装说明
 
-发布标记：v0.2.0-unsigned.1；交付 IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
-自动化构建与文件校验结果见随附 IPA-VERIFICATION.json 及测试报告；真机验收仍待完成。
-交付目标为未签名的 arm64 IPA，必须由你自己的 Apple 账号签名后安装。
-目标：iPadOS 17 或更新版本；本轮目标设备为 iPad Air 11 英寸 M2。
-LectureFlow 是独立应用，bundle ID 为 com.yufeizheng.lectureflow，不覆盖 Wasic。
+目标发布标记：v0.2.0-unsigned.1；目标 IPA：LectureFlow-0.2.0-build3-unsigned.ipa。
+最终交付以完整构建、IPA-VERIFICATION.json 和 SHA256SUMS.txt 校验完成的文件为准；本次真机验收待完成。
+这是未签名的 arm64 IPA，需用自己的 Apple 账号签名。目标为 iPadOS 17+、iPad Air 11 英寸 M2。
+沿用现有 WhisperAX 工程，应用名为 LectureFlow，bundle ID 为 com.yufeizheng.lectureflow。
 
-1. 在 Windows 从 AltStore 官方说明安装 AltServer，并按说明安装所需的 Apple iTunes/iCloud 组件。
-   官方入口：https://altstore.io/ ，Windows 指引：https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
-2. 用 USB 连接并信任 iPad，在 AltServer 中选择 Install AltStore。只在官方 AltServer/AltStore 的系统流程输入自己的 Apple 账号。
-3. 按 iPad 提示信任开发者，并在“设置 > 隐私与安全性”按需启用开发者模式。重新启动后确认。
-4. 将校验后的 LectureFlow-0.2.0-build3-unsigned.ipa 传到 iPad“文件”，从 AltStore Classic 的 My Apps 的加号导入。
-   也可用 USB 连接后按住 Shift 左键单击 Windows AltServer 托盘图标，选择 Sideload .ipa，再选择 iPad 和此 IPA。
-5. 免费账号应用通常需要每 7 天刷新；保持 AltServer 可访问并按 AltStore 提示刷新。AltStore 本身也占用激活名额；同时保留 Wasic 时留意免费账号的 3 个激活应用名额。
+从已安装的 0.1.0 / build 1 升级
+1. 在旧应用逐课打开“导出笔记”，导出 Markdown / TXT / PDF；在“原音文件”的“录音操作”中逐个“导出 WAV 原音”。确认备份文件可打开、原音可回放，再开始升级。
+2. 检查最终 IPA 的 SHA-256：
+   Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.2.0-build3-unsigned.ipa'
+   结果须与同一交付的 SHA256SUMS.txt 一致；Windows ZIP 的 SHA 以交付外部校验文件为准。
+3. 用 USB 连接并信任 iPad，打开 Windows AltServer。沿用本机已成功的操作：按住 Shift，左键单击 AltServer 托盘图标，选择 Sideload .ipa，再选此 IPA、iPad 和原 Apple 签名账号。
+4. 使用同一账号覆盖安装，保持 com.yufeizheng.lectureflow；不要先卸载。按系统提示信任开发者 / 启用开发者模式后，核对旧课程、原文、原音、手动编辑及已有 DeepSeek 配置仍在。
+5. 免费 Apple 账号签名通常 7 天有效，按 AltServer / AltStore 提示用原账号重新签名或刷新，并再次核对数据。AltStore 的 1200 服务器发现错误不代表此 IPA 无法侧载；可沿用上述已成功的 USB + AltServer 流程。
 
-此 ZIP 是 IPA 与说明的文件包，不是 Windows EXE 安装器；没有代填账号、共享签名或凭据。
-可用 PowerShell 检查下载文件 SHA-256：Get-FileHash -Algorithm SHA256 -LiteralPath '.\LectureFlow-0.2.0-build3-unsigned.ipa'
-结果应与同一 Release 的 SHA256SUMS.txt 一致。Windows ZIP 本身的 SHA 见 Release 外部校验文件。
-从旧版升级前，先逐课导出笔记和原始 WAV 备份。使用原签名账号覆盖安装，保留 com.yufeizheng.lectureflow；不要先卸载应用。升级后核对课程、原文、原音、手动编辑和 AI 设置仍可打开。
+新 Windows 环境按 AltStore 官方指引配置 AltServer 及所需 Apple 组件：
+https://altstore.io/
+https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
+只在官方 AltServer / AltStore 系统流程输入自己的 Apple 账号。此 ZIP 是 IPA 与说明包，没有 Windows EXE、共享签名或代填账号。
 
-第一次使用
-- 先创建或选中课程，按课堂实际语言选择“中文课”或“英文课”，再点“准备课堂模型”。默认识别模型改为支持两种语言的多语 base，不是 base.en。
-- base 首次准备需要联网下载；旧 tiny.en 缓存不会删除，但不能替代 base 的下载。准备完成后，录音转写在本机进行；IPA 不内置模型权重。
-- 分别用中文、英文做 1 分钟录音，确认麦克风许可、对应语言原文、课程保存和重启后恢复。
-- 低音量样本只在送入识别器前做受限幅度归一化，保存的原始 WAV 不变；安静环境、远距离或严重噪声下的识别质量仍需实测。
-- 云笔记为可选功能。需在设置填入你自己的 HTTPS OpenAI 兼容 chat/completions 完整地址、模型名和 Key。
-- 已配置的 DeepSeek 地址、模型和个人 Key 可继续使用；切换课堂语言、查看导图不需要另申请 Key。GPT / ChatGPT Pro 免 API Key 登录尚未在本版接入，作为后续工作。
-- 未配置云服务时仍可本地录音/转写。开启云笔记会向你选择的服务发送课程标题、有限的已确认转写片段、已有双语笔记、手动编辑、累计课程梳理和概念树；原音保留在本机。服务商可能按量计费。
-- 双语笔记以课程主线递推，并提供可拖动、缩放的思维导图；点击节点查看完整中英文字，可全屏打开导图。旧课暂停保存后可用“梳理整堂课”生成累计梳理和导图，原过程笔记与编辑保留。
-- 笔记可结合前后文补全连贯表达，不在成品逐句叙述推断过程；不会据此改写原始转写，也不应编造数字、人名、公式或事实。请用原音和原文核对关键内容。
-- API Key 保存于本机系统钥匙串；此包和 GitHub 构建不包含任何个人 API Key。
-- 录音涉及他人时先取得适当同意。请妥善保存含课堂声音和文字的导出文件。
+第一次准备与使用
+- 创建或选中课程，按课堂实际语言选“中文课”或“英文课”，点“准备课堂模型”。模型为多语 base。
+- IPA 内置并校验从官方 Whisper base 权重导出的 FLOAT32 编码器；其余 Core ML 组件与 tokenizer 首次准备仍需联网，可能需要几分钟。准备完成后识别在 iPad 本机运行，已有 tiny.en 缓存保留。冷启动后点“准备课堂模型”应复用已缓存组件。
+- 先分别做中文、英文 1 分钟录音，点“暂停并保存”，核对原文语言、回放、导出及重启恢复，再按 DEVICE-ACCEPTANCE-zh.txt 做完整验收。
+- 低音量只在 ASR 输入上做受限增益，保存 / 导出的 WAV 不变。每个 8 秒转写区间使用前后各最多 4 秒上下文，只保存当前区间文字；识别落后时原音继续保存，可暂停后用“补转写原音”重试。
+- AI 可选；未配置时仍可本地录音和转写。已有 DeepSeek 的 HTTPS 地址、模型名和 Key 可继续使用，Key 保存在本机钥匙串。新服务需填写支持 chat/completions 与 JSON 对象输出的完整 HTTPS 地址、模型及个人 Key。
+- 云笔记发送课程标题、有限的已确认原文、已有双语笔记、人工编辑、累计梳理及概念树到所选服务；原音留在本机，费用按服务账号计费。
+- 双语笔记和思维导图随课程累计更新。可拖动、缩放导图，点击节点查看完整中英内容，点“全屏”展开。暂停保存后可点“梳理整堂课”整理旧课，过程笔记和人工编辑保留；失败保留旧梳理。
+- 有上下文依据时可补全断句和术语，笔记直接呈现课程内容，不逐句讲述“推断 / 新片段 / 听不清”；不应编造数字、人名、公式或事实。关键内容以原文和原音核对。
+- 切换语言、查看导图不用另申请 Key。GPT / ChatGPT Pro 免 API Key 登录未接入，留待后续工作。
 
-限制与验收
-本版 CI 包含导图 XCTest 交互及中文课堂语言设置重启保留检查，结果以 ui-feature-tests.xcresult、ui-feature-tests.log 和随附测试报告为准。
-可选合成语音专项在 macOS 下载或复用多语 base 与 tokenizer，使用系统合成的英/中文清晰、低音量样例做真实本机推理；低音量副本使用生产归一化与 PCM 代码，结果以 ASR-SMOKE.json / ASR-SMOKE.txt 为准，不预先判定通过。
-云端编译、合成语音、模拟器测试及 IPA 检查不等同真机验收。多语 base 在 M2 上的速度、质量、内存和电量，以及教师真实低声、免费签名安装、锁屏后台、真实云双语笔记/导图质量、90 分钟长录音仍需按 DEVICE-ACCEPTANCE-zh.txt 实测。
-不要先用重要且不可重来的课堂作为第一次长录音测试。iPad 强制终止应用时不会继续录音。
+验证边界
+音频核心、课程存储、模拟 HTTP 笔记请求及模拟器导图 / 语言保留检查已有通过记录。macOS 诊断 CI 38352403251 使用 FLOAT32 编码器完成中 / 英文 × 清晰 / 低音量四组合成语音的真实推理，结果见该次 ASR-SMOKE.json / ASR-SMOKE.txt：
+https://github.com/yufeizheng314-png/LectureFlow/actions/runs/38352403251
+最终交付的构建、IPA 和 UI 结果以随附报告为准。合成音、模拟响应和模拟器不代表真实教师、iPad 或真实 DeepSeek 笔记 / 导图质量通过；速度、内存、电量、锁屏后台及 90 分钟录音仍待真机验收。
+首次长测请用可重复的样例；应用被系统强制终止期间不会继续录音。录音涉及他人时取得适当同意，妥善保存导出文件。
 
-源码与上游
+源码与许可
 https://github.com/yufeizheng314-png/LectureFlow
-本应用基于 argmaxinc/argmax-oss-swift 的现有 Examples/WhisperAX 工程改造，上游固定提交 9f99b5cb6a907730543823ad271b82532782a899。
-完整 MIT / 上游第三方许可随包保留于 LectureFlow-Licenses.txt。
+基于 argmaxinc/argmax-oss-swift 的 Examples/WhisperAX，固定上游提交 9f99b5cb6a907730543823ad271b82532782a899。
+MIT、官方 Whisper 权重及上游第三方许可随包保留于 LectureFlow-Licenses.txt。

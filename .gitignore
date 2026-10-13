@@ -16,6 +16,8 @@ Models
 **/*.mlpackage
 **/*.mlmodel
 **/*.mlmodelc
+# CI generates the verified FLOAT32 encoder and its manifest inside this resource folder.
+/Examples/WhisperAX/WhisperAX/LectureFlowBaseEncoder.mlmodelc/
 **/*.zip
 **/*.tar.gz
 

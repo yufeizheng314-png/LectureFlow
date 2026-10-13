@@ -34,7 +34,7 @@ FIXTURES = {
 }
 
 
-def cli_arguments(cli, audio, report_dir, cache, model_path, compute_units, mode):
+def cli_arguments(cli, audio, report_dir, cache, model_path, compute_units, mode, encoder_model_path=None):
     if mode not in MODES:
         raise ValueError("Unknown control mode")
     argv = [cli, "transcribe", "--audio-path", audio, "--language", "en", "--task", "transcribe",
@@ -47,11 +47,20 @@ def cli_arguments(cli, audio, report_dir, cache, model_path, compute_units, mode
     argv.append("--word-timestamps" if mode == "word_timestamps" else "--without-timestamps")
     # Keep MLTensor's default policy for both modes; this is a separate control
     # from the previous all-CPU + explicit MLTensor CPU diagnostic.
+    if encoder_model_path is not None:
+        argv += ["--diagnostic-encoder-path", encoder_model_path]
     if model_path is not None:
         argv += ["--model-path", model_path]
     else:
         argv += ["--model", "base", "--model-prefix", "openai", "--download-model-path", cache / "models"]
     return argv
+
+
+def print_case_result(case):
+    fields = ("fixture", "mode", "status", "reported_language", "keyword_hits",
+              "keyword_hit_count", "transcript", "audio_preserved", "reason")
+    print("ASR control result: " + json.dumps(
+        {name: case[name] for name in fields if name in case}, ensure_ascii=False), flush=True)
 
 
 def evaluate_transcript(result, keywords):
@@ -67,6 +76,13 @@ def evaluate_transcript(result, keywords):
 def run(args, report, repo, output):
     if platform.system() != "Darwin":
         raise RuntimeError("Blocked: macOS say, afconvert and Core ML are required")
+    encoder_model_path = args.encoder_model_path.resolve() if args.encoder_model_path else None
+    if encoder_model_path is not None:
+        if not encoder_model_path.is_dir() or encoder_model_path.suffix not in {".mlpackage", ".mlmodelc"}:
+            raise RuntimeError("Blocked: diagnostic encoder must be a model package or compiled model directory")
+        report["diagnostic_encoder_override"] = {"path": str(encoder_model_path), "files_sha256": {
+            path.relative_to(encoder_model_path).as_posix(): smoke.sha256(path)
+            for path in sorted(encoder_model_path.rglob("*")) if path.is_file()}}
     cache = args.cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     model_path = args.model_path.resolve() if args.model_path else smoke.cached_base_model(cache)
@@ -120,6 +136,7 @@ def run(args, report, repo, output):
             report["cases"].append(case)
             if fixture not in audio:
                 case["reason"] = source_errors.get(fixture, "Audio fixture was not prepared")
+                print_case_result(case)
                 continue
             submitted = audio[fixture]
             original_sha = smoke.sha256(submitted)
@@ -127,7 +144,8 @@ def run(args, report, repo, output):
             case["audio_file"] = submitted.name
             report_dir = output / f"{fixture}-{mode}-reports"
             report_dir.mkdir()
-            argv = cli_arguments(cli, submitted, report_dir, cache, model_path, args.compute_units, mode)
+            argv = cli_arguments(cli, submitted, report_dir, cache, model_path, args.compute_units, mode,
+                                 encoder_model_path)
             case["cli_arguments"] = [str(value) for value in argv]
             try:
                 case["elapsed_seconds"] = smoke.command(argv, output / f"{fixture}-{mode}-cli.log", args.cli_timeout, repo)
@@ -147,6 +165,7 @@ def run(args, report, repo, output):
                     case["reason"] = "Inference changed the control audio"
                 model_path = model_path or smoke.cached_base_model(cache)
                 report["model_path"] = str(model_path) if model_path else None
+            print_case_result(case)
             if model_path is None and case["status"] == "blocked":
                 raise RuntimeError("Initial model/inference setup blocked; remaining controls were not executed")
     report["jfk_source_preserved"] = smoke.sha256(jfk) == report["jfk_source_sha256"]
@@ -167,6 +186,8 @@ def main():
     parser.add_argument("--cache", type=Path, default=repo / ".build/lectureflow-asr-cache")
     parser.add_argument("--cli", type=Path, help="Already-built repository whisperkit-cli")
     parser.add_argument("--model-path", type=Path, help="Complete multilingual openai_whisper-base cache folder")
+    parser.add_argument("--encoder-model-path", type=Path,
+                        help="Diagnostic .mlpackage or .mlmodelc encoder override; original downloaded models remain unchanged")
     parser.add_argument("--compute-units", choices=("cpuAndGPU", "cpuOnly", "cpuAndNeuralEngine"), default="cpuAndGPU")
     parser.add_argument("--build-timeout", type=int, default=900)
     parser.add_argument("--cli-timeout", type=int, default=600)
@@ -193,7 +214,12 @@ def main():
                     "Sources/ArgmaxCLI/TranscribeCLIUtils.swift", "Sources/WhisperKit/Core/TextDecoder.swift",
                     "Sources/WhisperKit/Core/Text/TokenSampler.swift", "Sources/WhisperKit/Core/Text/LogitsFilter.swift",
                     "Sources/WhisperKit/Core/FeatureExtractor.swift", "Sources/WhisperKit/Core/AudioEncoder.swift",
-                    "Sources/WhisperKit/Core/Audio/AudioProcessor.swift", "Sources/WhisperKit/Core/WhisperKit.swift"]
+                    "Sources/WhisperKit/Core/Audio/AudioProcessor.swift", "Sources/WhisperKit/Core/WhisperKit.swift",
+                    "scripts/lectureflow_export_encoder.py", "scripts/lectureflow_encoder_manifest.py",
+                    "scripts/lectureflow_validate.py",
+                    "Examples/WhisperAX/WhisperAX/LectureFlow/LectureFlowModel.swift",
+                    "Examples/WhisperAX/WhisperAX.xcodeproj/project.pbxproj",
+                    ".github/workflows/lectureflow-ios.yml"]
         report["source_sha256"] = {relative: smoke.sha256(repo / relative) for relative in evidence}
         run(args, report, repo, output)
     except (OSError, ValueError, subprocess.SubprocessError, RuntimeError) as error:
@@ -202,8 +228,10 @@ def main():
     for fixture in FIXTURES:
         for mode in MODES:
             if (fixture, mode) not in recorded:
-                report["cases"].append({"fixture": fixture, "mode": mode, "status": "blocked",
-                                        "reason": "Not executed because setup was blocked"})
+                case = {"fixture": fixture, "mode": mode, "status": "blocked",
+                        "reason": "Not executed because setup was blocked"}
+                report["cases"].append(case)
+                print_case_result(case)
     statuses = [case["status"] for case in report["cases"]]
     report["status"] = "passed" if len(statuses) == 4 and all(status == "passed" for status in statuses) and "infrastructure_error" not in report else "failed" if "failed" in statuses else "blocked"
     report["finished_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()

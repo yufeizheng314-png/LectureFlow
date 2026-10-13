@@ -58,6 +58,7 @@
 		FF6F6C340F9D7B9719DF1514 /* LFNotesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70466F4DFEB72AFF81BF251 /* LFNotesService.swift */; };
 		2E00E791C392C9CCB4ED272E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */; };
 		ACE7235A77DDA4FC7CF1447A /* LectureFlow-Licenses.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */; };
+		F310A400937AB67412C634F1 /* LectureFlowBaseEncoder.mlmodelc in Resources */ = {isa = PBXBuildFile; fileRef = F310A400937AB67412C634F2 /* LectureFlowBaseEncoder.mlmodelc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -167,6 +168,7 @@
 		F70466F4DFEB72AFF81BF251 /* LFNotesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LFNotesService.swift; sourceTree = "<group>"; };
 		716D195DD35194FBA4D46FDB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		1F3CEB785AFF040FD802F43C /* LectureFlow-Licenses.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = LectureFlow-Licenses.txt; sourceTree = "<group>"; };
+		F310A400937AB67412C634F2 /* LectureFlowBaseEncoder.mlmodelc */ = {isa = PBXFileReference; lastKnownFileType = folder; path = LectureFlowBaseEncoder.mlmodelc; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -269,6 +271,7 @@
 		1677AFA82B57618A008C61C0 /* WhisperAX */ = {
 			isa = PBXGroup;
 			children = (
+				F310A400937AB67412C634F2 /* LectureFlowBaseEncoder.mlmodelc */,
 				DE2CA6F7CF5AD4FC3D07706E /* LectureFlow */,
 				1626683A2BB90CC9008F950A /* Info.plist */,
 				1677AFAB2B57618A008C61C0 /* WhisperAXApp.swift */,
@@ -608,6 +611,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F310A400937AB67412C634F1 /* LectureFlowBaseEncoder.mlmodelc in Resources */,
 				ACE7235A77DDA4FC7CF1447A /* LectureFlow-Licenses.txt in Resources */,
 				2E00E791C392C9CCB4ED272E /* PrivacyInfo.xcprivacy in Resources */,
 				1677AFC42B57618A008C61C0 /* Preview Assets.xcassets in Resources */,

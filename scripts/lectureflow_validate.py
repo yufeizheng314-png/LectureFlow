@@ -35,6 +35,8 @@ def configuration():
     for name in ['LICENSE','NOTICES']:
         assert (ROOT/name).read_text() in combined
     assert (BASE/'WhisperAX/LectureFlow/LectureFlowAudio-LICENSE.txt').read_text() in combined
+    assert (BASE/'WhisperAX/Resources/OpenAI-Whisper-LICENSE.txt').read_text() in combined
+    assert 'LectureFlowBaseEncoder.mlmodelc in Resources' in pbx
     subprocess.run(['git','merge-base','--is-ancestor',UPSTREAM,'HEAD'],cwd=ROOT,check=True)
     print(f'Configuration passed: {len(files)} app sources, iPad brand, opaque icons, permissions, license notices and exact dependency pin.')
 
@@ -68,11 +70,31 @@ def ipa(path, report):
         assert (z.getinfo(executable).external_attr>>16)&0o111, 'Executable permission was not preserved'
         assert prefix+'LectureFlow-Licenses.txt' in names
         assert prefix+'PrivacyInfo.xcprivacy' in names
+        encoder_prefix = prefix+'LectureFlowBaseEncoder.mlmodelc/'
+        encoder_manifest_name = encoder_prefix+'lectureflow-encoder-manifest.json'
+        encoder = json.loads(z.read(encoder_manifest_name))
+        assert encoder['schema_version'] == 1 and encoder['model'] == 'openai/whisper-base'
+        assert encoder['compute_precision'] == 'FLOAT32'
+        assert encoder['base_sha256'] == 'ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e'
+        assert encoder['input_shape'] == [1,80,1,3000] and encoder['output_shape'] == [1,512,1,1500]
+        assert encoder['source_commit'] == subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+        expected_encoder_files = set()
+        for item in encoder['files']:
+            relative = item['path']
+            assert isinstance(relative,str) and relative and not relative.startswith('/') and '\\' not in relative
+            assert all(part not in ('','.', '..') for part in relative.split('/'))
+            assert relative != 'lectureflow-encoder-manifest.json' and relative not in expected_encoder_files
+            expected_encoder_files.add(relative)
+            assert re.fullmatch('[0-9a-f]{64}',item['sha256']) and type(item['bytes']) is int
+            data = z.read(encoder_prefix+relative)
+            assert len(data) == item['bytes'] and hashlib.sha256(data).hexdigest() == item['sha256'], relative
+        actual_encoder_files = {n[len(encoder_prefix):] for n in names if n.startswith(encoder_prefix) and not n.endswith('/') and n != encoder_manifest_name}
+        assert actual_encoder_files == expected_encoder_files and 'coremldata.bin' in expected_encoder_files
         for name in names:
             if name.endswith('/') or name == executable: continue
             data=z.read(name)
             if data[:4] == b'\xcf\xfa\xed\xfe': macho_unsigned(data)
-    result={'file':path.name,'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'unsigned':True,'architecture':'arm64','bundle_id':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'minimum_os':info['MinimumOSVersion'],'device_family':info['UIDeviceFamily'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'upstream_commit':UPSTREAM,'argument_parser_commit':PIN}
+    result={'file':path.name,'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'unsigned':True,'architecture':'arm64','bundle_id':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'minimum_os':info['MinimumOSVersion'],'device_family':info['UIDeviceFamily'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'upstream_commit':UPSTREAM,'argument_parser_commit':PIN,'bundled_encoder':encoder}
     report.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))
 

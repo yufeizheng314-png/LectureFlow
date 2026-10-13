@@ -294,6 +294,10 @@ def main():
             "Sources/ArgmaxCLI/TranscribeCLIUtils.swift",
             "Sources/ArgmaxCLI/TranscribeCLI.swift",
             "Sources/WhisperKit/Core/Text/TokenSampler.swift",
+            "scripts/lectureflow_export_encoder.py",
+            "scripts/lectureflow_encoder_manifest.py",
+            "Examples/WhisperAX/WhisperAX.xcodeproj/project.pbxproj",
+            ".github/workflows/lectureflow-ios.yml",
         ]
         report["source_sha256"] = {relative: sha256(repo / relative) for relative in evidence_sources}
         run(args, report, repo, output)
@@ -313,6 +317,7 @@ def main():
     for case in report["cases"]:
         lines += [f"{case['language']} / {case['volume']}: {case['status']}", f"Keyword hits: {case.get('keyword_hits', {})}",
                   "Actual transcription: " + case.get("transcript", "[no verified transcription]"), case.get("reason", ""), ""]
+        print(f"{case['language']} / {case['volume']}: {case['status']}; keywords={case.get('keyword_hit_count', 0)}; text={case.get('transcript', '[not transcribed]')}")
     if "infrastructure_error" in report:
         lines.append(report["infrastructure_error"])
     (output / "ASR-SMOKE.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
